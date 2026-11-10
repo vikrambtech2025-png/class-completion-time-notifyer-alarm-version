@@ -17,7 +17,7 @@ import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
-import { OCR } from "expo-ocr-kit";
+import { recognizeText } from "expo-ocr-kit";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 Notifications.setNotificationHandler({
@@ -86,7 +86,6 @@ function createBlankSchedule() {
   return { periods, timetable };
 }
 
-// Parse uploaded timetable JSON into app format
 function parseTimetableJSON(json) {
   let data;
   try {
@@ -157,7 +156,6 @@ function parseTimetableJSON(json) {
   return { periods, timetable };
 }
 
-// Extract time patterns from OCR text
 function extractTimesFromText(text) {
   const timePattern = /(\d{1,2}):(\d{2})/g;
   const times = [];
@@ -172,12 +170,10 @@ function extractTimesFromText(text) {
   return times;
 }
 
-// Parse OCR text into a schedule (best effort)
 function parseOCRText(text) {
   const times = extractTimesFromText(text);
   const periods = [];
 
-  // Try to build periods from extracted times (pairs of start-end)
   if (times.length >= 2) {
     for (let i = 0; i + 1 < times.length; i += 2) {
       periods.push({
@@ -188,7 +184,6 @@ function parseOCRText(text) {
     }
   }
 
-  // If no valid periods extracted, use defaults
   if (periods.length === 0) {
     periods = DEFAULT_PERIODS.map((p) => ({ ...p }));
   }
@@ -391,13 +386,11 @@ export default function App() {
 
       setUploadedImage(asset.uri);
 
-      // Run OCR
       try {
-        const ocrResult = await OCR.recognize(asset.uri);
+        const ocrResult = await recognizeText(asset.uri);
         const text = ocrResult?.text || ocrResult?.blocks?.map((b) => b.text).join("\n") || "";
         setOcrText(text);
 
-        // Try to parse times from OCR text
         const parsed = parseOCRText(text);
         updateSchedule(parsed);
         setStatus(`Image processed! ${parsed.periods.length} periods extracted. Edit as needed.`);
@@ -408,7 +401,6 @@ export default function App() {
         setShowOCRModal(true);
       } catch (ocrErr) {
         console.warn("OCR error:", ocrErr);
-        // Fall back to blank schedule with image reference
         updateSchedule(createBlankSchedule());
         setStatus("Image loaded. OCR failed — please enter data manually.");
         Alert.alert(
@@ -558,44 +550,7 @@ export default function App() {
           </View>
         )}
 
-        {/* Action Buttons */}
-        <View style={styles.buttonRow}>
-          <TouchableOpacity
-            style={styles.uploadBtn}
-            onPress={handleUpload}
-            activeOpacity={0.7}
-            disabled={uploading}
-          >
-            <Text style={styles.uploadBtnText}>{uploading ? "Uploading..." : "Upload Timetable"}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.rescheduleBtn}
-            onPress={openEditor}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.rescheduleBtnText}>Edit Periods</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.buttonRow}>
-          <TouchableOpacity
-            style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-            onPress={() => {
-              let periods = currentSchedule.periods;
-              if (inlineEdit) {
-                const updated = commitInlineEdit();
-                if (updated) periods = updated.periods;
-              }
-              scheduleAll(periods);
-            }}
-            disabled={saving}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.saveBtnText}>Schedule Alarms</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Timetable Grid */}
+        {/* Timetable Grid - shows updated schedule */}
         {DAYS.map((day) => (
           <View key={day} style={styles.day}>
             <Text style={styles.dayTitle}>{day}</Text>
@@ -782,65 +737,49 @@ export default function App() {
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* Bottom Action Bar */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity
+          style={[styles.bottomBtn, styles.uploadBtn, uploading && styles.saveBtnDisabled]}
+          onPress={handleUpload}
+          activeOpacity={0.7}
+          disabled={uploading}
+        >
+          <Text style={styles.bottomBtnText}>{uploading ? "Uploading..." : "Upload"}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.bottomBtn, styles.rescheduleBtn]}
+          onPress={openEditor}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.bottomBtnText}>Edit Periods</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.bottomBtn, styles.saveBtn, saving && styles.saveBtnDisabled]}
+          onPress={() => {
+            let periods = currentSchedule.periods;
+            if (inlineEdit) {
+              const updated = commitInlineEdit();
+              if (updated) periods = updated.periods;
+            }
+            scheduleAll(periods);
+          }}
+          disabled={saving}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.bottomBtnText}>Schedule Alarms</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
-  scrollContent: { padding: 12, paddingBottom: 40 },
+  scrollContent: { padding: 12, paddingBottom: 20 },
   title: { fontSize: 22, fontWeight: "bold", marginBottom: 4 },
   status: { fontSize: 13, color: "#555", marginBottom: 10 },
-  buttonRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
-  uploadBtn: {
-    flex: 1,
-    backgroundColor: "#FF9800",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: "center",
-    minHeight: 44,
-    justifyContent: "center",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-  },
-  uploadBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
-  rescheduleBtn: {
-    flex: 1,
-    backgroundColor: "#2196F3",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: "center",
-    minHeight: 44,
-    justifyContent: "center",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-  },
-  rescheduleBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
-  saveBtn: {
-    flex: 1,
-    backgroundColor: "#4CAF50",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: "center",
-    minHeight: 44,
-    justifyContent: "center",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-  },
-  saveBtnDisabled: { opacity: 0.6 },
-  saveBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
   imageContainer: {
     marginBottom: 12,
     padding: 8,
@@ -893,9 +832,34 @@ const styles = StyleSheet.create({
     color: "#333",
     minHeight: 36,
   },
-  footer: { marginTop: 12, fontSize: 12, color: "#888" },
+  footer: { marginTop: 12, fontSize: 12, color: "#888", textAlign: "center" },
   ocrText: { fontSize: 12, color: "#333", lineHeight: 18 },
   ocrHint: { fontSize: 12, color: "#888", marginTop: 12, fontStyle: "italic" },
+
+  // Bottom bar
+  bottomBar: {
+    flexDirection: "row",
+    padding: 10,
+    paddingBottom: Platform.OS === "ios" ? 24 : 10,
+    backgroundColor: "#fff",
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    gap: 8,
+  },
+  bottomBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+  },
+  bottomBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
 
   // Modal styles
   modalContainer: { flex: 1, backgroundColor: "#f5f5f5" },
