@@ -1,10 +1,21 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Platform, Modal, TextInput, TouchableOpacity, Alert } from "react-native";
+import React, { useEffect, useState, useCallback } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Platform,
+  Modal,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+  Dimensions,
+  SafeAreaView,
+} from "react-native";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import timetableData from "./timetable.json";
-
-// Remove expo-av import and usage to fix native library crash
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -15,7 +26,8 @@ Notifications.setNotificationHandler({
   }),
 });
 
-// const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const DAYS = timetableData.days;
+const DEFAULT_PERIODS = timetableData.defaultPeriods.map((p) => ({ ...p }));
 
 function parseTime(t) {
   const [h, m] = t.split(":").map(Number);
@@ -49,16 +61,52 @@ function formatTimeRange(timeStr) {
   return `${formatTime12h(start)} - ${formatTime12h(end)}`;
 }
 
+function createBlankSemester() {
+  const periods = DEFAULT_PERIODS.map((p) => ({ ...p }));
+  const timetable = {};
+  DAYS.forEach((day) => {
+    timetable[day] = periods.map((p) => ({
+      period: p.period,
+      subject: "",
+      faculty: "",
+    }));
+  });
+  return { periods, timetable };
+}
+
+const STORAGE_KEY = "@period_timer_semesters";
+
 export default function App() {
   const [status, setStatus] = useState("Initializing...");
   const [scheduled, setScheduled] = useState([]);
-  const [periods, setPeriods] = useState(timetableData.periods.map((p) => ({ ...p })));
+  const [selectedYear, setSelectedYear] = useState(1);
+  const [selectedSemester, setSelectedSemester] = useState(1);
+  const [semesters, setSemesters] = useState({});
   const [showEditor, setShowEditor] = useState(false);
   const [editPeriods, setEditPeriods] = useState([]);
+  const [editTimetable, setEditTimetable] = useState({});
   const [saving, setSaving] = useState(false);
+  const [inlineEdit, setInlineEdit] = useState(null); // {day, periodIdx, field}
+  const [inlineValue, setInlineValue] = useState("");
 
+  const screenData = Dimensions.get("window");
+  const isSmallScreen = screenData.width < 360;
+
+  const semesterKey = `Y${selectedYear}S${selectedSemester}`;
+
+  // Load saved data
   useEffect(() => {
     (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          setSemesters(parsed);
+        }
+      } catch (e) {
+        console.warn("Failed to load saved data", e);
+      }
+
       if (!Device.isDevice) {
         setStatus("Must run on a physical device");
         return;
@@ -66,7 +114,6 @@ export default function App() {
       const { status: existing } = await Notifications.getPermissionsAsync();
       let final = existing;
       if (existing !== "granted") {
-        // Show alert to user about why permission is needed
         Alert.alert(
           "Notification Permission Required",
           "This app needs notification permission to schedule period alarms. Please tap 'Allow' on the next screen.",
@@ -76,7 +123,7 @@ export default function App() {
         final = status;
       }
       if (final !== "granted") {
-        setStatus("Notification permission DENIED - alarms will not work! Go to Settings > Apps > Period Timer > Notifications and enable.");
+        setStatus("Notification permission DENIED - alarms will not work!");
         Alert.alert(
           "Permission Denied",
           "Without notification permission, alarms cannot be scheduled. Please enable notifications in your phone settings.",
@@ -88,24 +135,45 @@ export default function App() {
       if (Platform.OS === "android") {
         await Notifications.setNotificationChannelAsync("period-alarms-v3", {
           name: "Period Alarms",
-          importance: 5, // AndroidImportance.MAX
+          importance: 5,
           sound: "buzzer",
           vibrationPattern: [0, 250, 250, 250],
-          lockscreenVisibility: 1, // AndroidNotificationVisibility.PUBLIC
+          lockscreenVisibility: 1,
           bypassDnd: true,
         });
       }
 
-      await scheduleAll(periods);
+      setStatus("Ready — select year & semester, then schedule");
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Get current semester data (or create blank)
+  const currentSemester = semesters[semesterKey] || createBlankSemester();
+
+  // Save all semesters to AsyncStorage
+  const persistSemesters = useCallback(async (data) => {
+    try {
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {
+      console.warn("Failed to save data", e);
+    }
+  }, []);
+
+  // Update current semester data
+  const updateCurrentSemester = useCallback(
+    (updated) => {
+      const next = { ...semesters, [semesterKey]: updated };
+      setSemesters(next);
+      persistSemesters(next);
+    },
+    [semesters, semesterKey, persistSemesters]
+  );
 
   async function scheduleAll(periodList) {
     await Notifications.cancelAllScheduledNotificationsAsync();
     const items = [];
     for (const pt of periodList) {
-      const [start] = pt.time.split("-");
+      const [start] = (pt.time || "").split("-");
       if (!validateTime(start)) continue;
       const s = parseTime(start);
       const when = nextOccurrence(s.h, s.m);
@@ -114,7 +182,7 @@ export default function App() {
         content: {
           title: `Period ${pt.period}: ${name}`,
           body: `${name} — ${formatTimeRange(pt.time)}`,
-          priority: 2, // AndroidNotificationPriority.MAX
+          priority: 2,
           sticky: true,
           autoDismiss: false,
         },
@@ -127,11 +195,12 @@ export default function App() {
       items.push({ period: pt.period, time: pt.time, name, id });
     }
     setScheduled(items);
-    setStatus(`Scheduled ${items.length} period alarms`);
+    setStatus(`Scheduled ${items.length} period alarms for ${semesterKey}`);
   }
 
   function openEditor() {
-    setEditPeriods(periods.map((p) => ({ ...p })));
+    setEditPeriods(currentSemester.periods.map((p) => ({ ...p })));
+    setEditTimetable(JSON.parse(JSON.stringify(currentSemester.timetable)));
     setShowEditor(true);
   }
 
@@ -155,67 +224,218 @@ export default function App() {
       name: `Period ${editPeriods.length + 1}`,
     };
     setEditPeriods((prev) => [...prev, newPeriod]);
+    // Add to timetable for all days
+    setEditTimetable((prev) => {
+      const next = { ...prev };
+      DAYS.forEach((day) => {
+        if (!next[day]) next[day] = [];
+        next[day] = [...next[day], { period: newPeriod.period, subject: "", faculty: "" }];
+      });
+      return next;
+    });
   }
 
   function removePeriod(index) {
+    const periodNum = editPeriods[index].period;
     setEditPeriods((prev) => prev.filter((_, i) => i !== index));
+    setEditTimetable((prev) => {
+      const next = { ...prev };
+      DAYS.forEach((day) => {
+        if (next[day]) {
+          next[day] = next[day].filter((e) => e.period !== periodNum);
+        }
+      });
+      return next;
+    });
   }
 
   async function saveAndReschedule() {
-    // Validate all times
     for (const p of editPeriods) {
-      const [start, end] = p.time.split("-");
+      const [start, end] = (p.time || "").split("-");
       if (!validateTime(start) || !validateTime(end)) {
         Alert.alert("Invalid Time", `Period ${p.period} has invalid time format. Use HH:MM-HH:MM (e.g., 09:00-09:45)`);
         return;
       }
     }
     setSaving(true);
-    const updated = editPeriods.map((p, i) => ({ ...p, period: i + 1 }));
-    setPeriods(updated);
-    await scheduleAll(updated);
+    const updated = {
+      periods: editPeriods.map((p, i) => ({ ...p, period: i + 1 })),
+      timetable: editTimetable,
+    };
+    // Re-index timetable periods
+    DAYS.forEach((day) => {
+      if (updated.timetable[day]) {
+        updated.timetable[day] = updated.timetable[day].map((e, i) => ({
+          ...e,
+          period: i + 1 <= updated.periods.length ? i + 1 : e.period,
+        }));
+      }
+    });
+    updateCurrentSemester(updated);
+    await scheduleAll(updated.periods);
     setSaving(false);
     setShowEditor(false);
   }
 
+  // Inline editing handlers
+  function startInlineEdit(day, periodIdx, field, currentValue) {
+    setInlineEdit({ day, periodIdx, field });
+    setInlineValue(currentValue || "");
+  }
+
+  function commitInlineEdit() {
+    if (!inlineEdit) return;
+    const { day, periodIdx, field } = inlineEdit;
+    const updated = JSON.parse(JSON.stringify(currentSemester));
+    if (updated.timetable[day] && updated.timetable[day][periodIdx]) {
+      updated.timetable[day][periodIdx][field] = inlineValue;
+    }
+    updateCurrentSemester(updated);
+    setInlineEdit(null);
+    setInlineValue("");
+  }
+
+  // Responsive sizing
+  const fontSize = isSmallScreen ? 12 : 14;
+  const titleSize = isSmallScreen ? 18 : 22;
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>Period Timer — Timetable</Text>
+        <Text style={[styles.title, { fontSize: titleSize }]}>Period Timer — Timetable</Text>
         <Text style={styles.status}>{status}</Text>
+
+        {/* Year Selector */}
+        <View style={styles.selectorRow}>
+          <Text style={styles.selectorLabel}>Year:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectorScroll}>
+            {[1, 2, 3, 4].map((y) => (
+              <TouchableOpacity
+                key={y}
+                style={[styles.selectorBtn, selectedYear === y && styles.selectorBtnActive]}
+                onPress={() => setSelectedYear(y)}
+              >
+                <Text style={[styles.selectorBtnText, selectedYear === y && styles.selectorBtnTextActive]}>
+                  Y{y}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Semester Selector */}
+        <View style={styles.selectorRow}>
+          <Text style={styles.selectorLabel}>Sem:</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectorScroll}>
+            {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+              <TouchableOpacity
+                key={s}
+                style={[styles.selectorBtn, selectedSemester === s && styles.selectorBtnActive]}
+                onPress={() => setSelectedSemester(s)}
+              >
+                <Text style={[styles.selectorBtnText, selectedSemester === s && styles.selectorBtnTextActive]}>
+                  S{s}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        <Text style={styles.semesterLabel}>
+          {semesterKey} — {currentSemester.periods.length} periods, {DAYS.length} days
+        </Text>
+
+        {/* Action Buttons */}
         <View style={styles.buttonRow}>
           <TouchableOpacity style={styles.rescheduleBtn} onPress={openEditor}>
-            <Text style={styles.rescheduleBtnText}>Reschedule / Edit Periods</Text>
+            <Text style={styles.rescheduleBtnText}>Edit Periods</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+            onPress={() => scheduleAll(currentSemester.periods)}
+            disabled={saving}
+          >
+            <Text style={styles.saveBtnText}>Schedule Alarms</Text>
           </TouchableOpacity>
         </View>
 
-        {Object.keys(timetableData.timetable).map((day) => (
+        {/* Timetable Grid */}
+        {DAYS.map((day) => (
           <View key={day} style={styles.day}>
             <Text style={styles.dayTitle}>{day}</Text>
-            {timetableData.timetable[day].map((e, i) => {
-              const ps = e.periods || [e.period];
-              return ps.map((p) => {
-                const pt = periods.find((x) => x.period === p);
-                const timeStr = pt ? formatTimeRange(pt.time) : "";
-                return (
-                  <Text key={`${day}-${p}-${i}`} style={styles.row}>
-                    P{p} {timeStr} — {e.subject} ({Array.isArray(e.faculty) ? e.faculty.join(",") : e.faculty})
-                  </Text>
-                );
-              });
+            {currentSemester.periods.map((p, pIdx) => {
+              const entry = currentSemester.timetable[day]?.[pIdx] || { subject: "", faculty: "" };
+              const isEditingSubject =
+                inlineEdit?.day === day && inlineEdit?.periodIdx === pIdx && inlineEdit?.field === "subject";
+              const isEditingFaculty =
+                inlineEdit?.day === day && inlineEdit?.periodIdx === pIdx && inlineEdit?.field === "faculty";
+
+              return (
+                <View key={`${day}-${p.period}`} style={styles.periodRow}>
+                  <View style={styles.periodInfo}>
+                    <Text style={[styles.periodNum, { fontSize }]}>{p.period}</Text>
+                    <Text style={[styles.periodTime, { fontSize: isSmallScreen ? 10 : 12 }]}>
+                      {formatTimeRange(p.time)}
+                    </Text>
+                  </View>
+                  <View style={styles.periodFields}>
+                    {isEditingSubject ? (
+                      <TextInput
+                        style={[styles.inlineInput, { fontSize }]}
+                        value={inlineValue}
+                        onChangeText={setInlineValue}
+                        onBlur={commitInlineEdit}
+                        autoFocus
+                        placeholder="Subject"
+                        placeholderTextColor="#999"
+                      />
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.inlineText}
+                        onPress={() => startInlineEdit(day, pIdx, "subject", entry.subject)}
+                      >
+                        <Text style={[styles.inlineTextLabel, { fontSize }, !entry.subject && styles.placeholderText]}>
+                          {entry.subject || "Tap to add subject"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                    {isEditingFaculty ? (
+                      <TextInput
+                        style={[styles.inlineInput, { fontSize }]}
+                        value={inlineValue}
+                        onChangeText={setInlineValue}
+                        onBlur={commitInlineEdit}
+                        autoFocus
+                        placeholder="Faculty"
+                        placeholderTextColor="#999"
+                      />
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.inlineText}
+                        onPress={() => startInlineEdit(day, pIdx, "faculty", entry.faculty)}
+                      >
+                        <Text style={[styles.inlineTextLabel, { fontSize: isSmallScreen ? 11 : 12 }, !entry.faculty && styles.placeholderText]}>
+                          {entry.faculty || "Tap to add faculty"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              );
             })}
           </View>
         ))}
+
         <Text style={styles.footer}>Scheduled: {scheduled.length} alarms</Text>
       </ScrollView>
 
       {/* Period Editor Modal */}
       <Modal visible={showEditor} animationType="slide" transparent={false} onRequestClose={closeEditor}>
-        <View style={styles.modalContainer}>
+        <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Edit Periods</Text>
+            <Text style={styles.modalTitle}>Edit Periods — {semesterKey}</Text>
             <TouchableOpacity onPress={closeEditor} style={styles.closeBtn}>
-              <Text style={styles.closeBtnText}>X</Text>
+              <Text style={styles.closeBtnText}>✕</Text>
             </TouchableOpacity>
           </View>
 
@@ -227,7 +447,7 @@ export default function App() {
                     <Text style={styles.periodBadgeText}>P{index + 1}</Text>
                   </View>
                   <TouchableOpacity onPress={() => removePeriod(index)} style={styles.deleteBtn}>
-                    <Text style={styles.deleteBtnText}>Del</Text>
+                    <Text style={styles.deleteBtnText}>🗑</Text>
                   </TouchableOpacity>
                 </View>
 
@@ -236,7 +456,7 @@ export default function App() {
                   style={styles.input}
                   value={p.name || ""}
                   onChangeText={(v) => updateEditPeriod(index, "name", v)}
-                  placeholder="e.g., Mathematics"
+                  placeholder="e.g., Period 1"
                   placeholderTextColor="#999"
                 />
 
@@ -244,9 +464,9 @@ export default function App() {
                 <View style={styles.timeRow}>
                   <TextInput
                     style={[styles.input, styles.timeInput]}
-                    value={p.time.split("-")[0] || ""}
+                    value={(p.time || "").split("-")[0] || ""}
                     onChangeText={(v) => {
-                      const end = p.time.split("-")[1] || "";
+                      const end = (p.time || "").split("-")[1] || "";
                       updateEditPeriod(index, "time", `${v}-${end}`);
                     }}
                     placeholder="09:00"
@@ -257,9 +477,9 @@ export default function App() {
                   <Text style={styles.timeSeparator}>to</Text>
                   <TextInput
                     style={[styles.input, styles.timeInput]}
-                    value={p.time.split("-")[1] || ""}
+                    value={(p.time || "").split("-")[1] || ""}
                     onChangeText={(v) => {
-                      const start = p.time.split("-")[0] || "";
+                      const start = (p.time || "").split("-")[0] || "";
                       updateEditPeriod(index, "time", `${start}-${v}`);
                     }}
                     placeholder="09:45"
@@ -268,9 +488,7 @@ export default function App() {
                     maxLength={5}
                   />
                 </View>
-                <Text style={styles.timePreview}>
-                  {formatTimeRange(p.time)}
-                </Text>
+                <Text style={styles.timePreview}>{formatTimeRange(p.time)}</Text>
               </View>
             ))}
 
@@ -285,35 +503,91 @@ export default function App() {
               onPress={saveAndReschedule}
               disabled={saving}
             >
-              <Text style={styles.saveBtnText}>{saving ? "Saving..." : "Save & Reschedule"}</Text>
+              <Text style={styles.saveBtnText}>{saving ? "Saving..." : "Save & Schedule"}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.cancelBtn} onPress={closeEditor}>
               <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </SafeAreaView>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
-  scrollContent: { padding: 16, paddingBottom: 40 },
-  title: { fontSize: 22, fontWeight: "bold", marginBottom: 8 },
-  status: { fontSize: 14, color: "#555", marginBottom: 12 },
-  buttonRow: { marginBottom: 16 },
+  scrollContent: { padding: 12, paddingBottom: 40 },
+  title: { fontSize: 22, fontWeight: "bold", marginBottom: 4 },
+  status: { fontSize: 13, color: "#555", marginBottom: 10 },
+  selectorRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  selectorLabel: { fontSize: 14, fontWeight: "600", marginRight: 8, color: "#333" },
+  selectorScroll: { flex: 1 },
+  selectorBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "#eee",
+    marginRight: 6,
+  },
+  selectorBtnActive: { backgroundColor: "#2196F3" },
+  selectorBtnText: { fontSize: 13, color: "#333", fontWeight: "600" },
+  selectorBtnTextActive: { color: "#fff" },
+  semesterLabel: { fontSize: 13, color: "#666", marginBottom: 8, fontStyle: "italic" },
+  buttonRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
   rescheduleBtn: {
+    flex: 1,
     backgroundColor: "#2196F3",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingVertical: 10,
     borderRadius: 8,
     alignItems: "center",
   },
-  rescheduleBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
-  day: { marginBottom: 12, padding: 8, backgroundColor: "#f2f2f2", borderRadius: 8 },
-  dayTitle: { fontSize: 16, fontWeight: "bold", marginBottom: 4 },
-  row: { fontSize: 13, marginLeft: 8, marginBottom: 2 },
+  rescheduleBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  saveBtn: {
+    flex: 1,
+    backgroundColor: "#4CAF50",
+    paddingVertical: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  saveBtnDisabled: { opacity: 0.6 },
+  saveBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  day: { marginBottom: 10, padding: 8, backgroundColor: "#f2f2f2", borderRadius: 8 },
+  dayTitle: { fontSize: 15, fontWeight: "bold", marginBottom: 6, color: "#2196F3" },
+  periodRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+    paddingVertical: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e0e0",
+  },
+  periodInfo: { width: 80, alignItems: "center" },
+  periodNum: { fontSize: 14, fontWeight: "bold", color: "#333" },
+  periodTime: { fontSize: 11, color: "#666" },
+  periodFields: { flex: 1, marginLeft: 8 },
+  inlineText: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: "#fff",
+    borderRadius: 4,
+    marginBottom: 2,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  inlineTextLabel: { fontSize: 13, color: "#333" },
+  placeholderText: { color: "#999", fontStyle: "italic" },
+  inlineInput: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: "#fff",
+    borderRadius: 4,
+    marginBottom: 2,
+    borderWidth: 1,
+    borderColor: "#2196F3",
+    fontSize: 13,
+    color: "#333",
+  },
   footer: { marginTop: 12, fontSize: 12, color: "#888" },
 
   // Modal styles
@@ -326,9 +600,9 @@ const styles = StyleSheet.create({
     backgroundColor: "#2196F3",
     paddingTop: Platform.OS === "ios" ? 50 : 16,
   },
-  modalTitle: { fontSize: 20, fontWeight: "bold", color: "#fff" },
+  modalTitle: { fontSize: 18, fontWeight: "bold", color: "#fff" },
   closeBtn: { padding: 8 },
-  closeBtnText: { fontSize: 22, color: "#fff", fontWeight: "bold" },
+  closeBtnText: { fontSize: 20, color: "#fff", fontWeight: "bold" },
   modalScroll: { flex: 1 },
   modalScrollContent: { padding: 16, paddingBottom: 20 },
   periodCard: {
@@ -373,10 +647,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  timeInput: {
-    flex: 1,
-    textAlign: "center",
-  },
+  timeInput: { flex: 1, textAlign: "center" },
   timeSeparator: { marginHorizontal: 10, fontSize: 14, color: "#666", fontWeight: "600" },
   timePreview: { fontSize: 13, color: "#2196F3", fontWeight: "600", textAlign: "center", marginTop: 6 },
   addBtn: {
@@ -394,15 +665,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#eee",
   },
-  saveBtn: {
-    backgroundColor: "#2196F3",
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  saveBtnDisabled: { opacity: 0.6 },
-  saveBtnText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
   cancelBtn: {
     backgroundColor: "#999",
     paddingVertical: 12,
