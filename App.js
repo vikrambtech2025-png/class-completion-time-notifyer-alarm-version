@@ -11,10 +11,13 @@ import {
   Alert,
   Dimensions,
   SafeAreaView,
+  Image,
 } from "react-native";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
+import { OCR } from "expo-ocr-kit";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 Notifications.setNotificationHandler({
@@ -92,7 +95,6 @@ function parseTimetableJSON(json) {
     throw new Error("Invalid JSON file");
   }
 
-  // Extract periods
   let periods = [];
   if (Array.isArray(data.periods)) {
     periods = data.periods.map((p, i) => ({
@@ -107,16 +109,13 @@ function parseTimetableJSON(json) {
       name: p.name || `Period ${p.period || i + 1}`,
     }));
   } else {
-    // No periods found, use defaults
     periods = DEFAULT_PERIODS.map((p) => ({ ...p }));
   }
 
-  // Ensure we have at least 1 period
   if (periods.length === 0) {
     periods = DEFAULT_PERIODS.map((p) => ({ ...p }));
   }
 
-  // Extract timetable
   const timetable = {};
   const sourceTimetable = data.timetable || {};
 
@@ -127,7 +126,6 @@ function parseTimetableJSON(json) {
     if (Array.isArray(dayEntries)) {
       dayEntries.forEach((entry) => {
         if (entry.periods && Array.isArray(entry.periods)) {
-          // Multiple periods combined (e.g., lab)
           entry.periods.forEach((pNum) => {
             entries.push({
               period: pNum,
@@ -145,7 +143,6 @@ function parseTimetableJSON(json) {
       });
     }
 
-    // Ensure entries for all periods
     const periodNums = periods.map((p) => p.period);
     periodNums.forEach((pNum) => {
       if (!entries.find((e) => e.period === pNum)) {
@@ -153,10 +150,56 @@ function parseTimetableJSON(json) {
       }
     });
 
-    // Sort by period number
     entries.sort((a, b) => a.period - b.period);
-
     timetable[day] = entries;
+  });
+
+  return { periods, timetable };
+}
+
+// Extract time patterns from OCR text
+function extractTimesFromText(text) {
+  const timePattern = /(\d{1,2}):(\d{2})/g;
+  const times = [];
+  let match;
+  while ((match = timePattern.exec(text)) !== null) {
+    const h = parseInt(match[1], 10);
+    const m = parseInt(match[2], 10);
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      times.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+    }
+  }
+  return times;
+}
+
+// Parse OCR text into a schedule (best effort)
+function parseOCRText(text) {
+  const times = extractTimesFromText(text);
+  const periods = [];
+
+  // Try to build periods from extracted times (pairs of start-end)
+  if (times.length >= 2) {
+    for (let i = 0; i + 1 < times.length; i += 2) {
+      periods.push({
+        period: periods.length + 1,
+        time: `${times[i]}-${times[i + 1]}`,
+        name: `Period ${periods.length + 1}`,
+      });
+    }
+  }
+
+  // If no valid periods extracted, use defaults
+  if (periods.length === 0) {
+    periods = DEFAULT_PERIODS.map((p) => ({ ...p }));
+  }
+
+  const timetable = {};
+  DAYS.forEach((day) => {
+    timetable[day] = periods.map((p) => ({
+      period: p.period,
+      subject: "",
+      faculty: "",
+    }));
   });
 
   return { periods, timetable };
@@ -175,11 +218,13 @@ export default function App() {
   const [inlineEdit, setInlineEdit] = useState(null);
   const [inlineValue, setInlineValue] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [ocrText, setOcrText] = useState("");
+  const [showOCRModal, setShowOCRModal] = useState(false);
+  const [uploadedImage, setUploadedImage] = useState(null);
 
   const screenData = Dimensions.get("window");
   const isSmallScreen = screenData.width < 360;
 
-  // Load saved schedule
   useEffect(() => {
     (async () => {
       try {
@@ -231,7 +276,7 @@ export default function App() {
         });
       }
 
-      setStatus("Ready — upload timetable or edit manually");
+      setStatus("Ready — upload timetable (JSON or image)");
     })();
   }, []);
 
@@ -282,7 +327,7 @@ export default function App() {
     setStatus(`Scheduled ${items.length} period alarms`);
   }
 
-  async function handleUpload() {
+  async function handleUploadJSON() {
     try {
       setUploading(true);
       const result = await DocumentPicker.getDocumentAsync({
@@ -302,13 +347,12 @@ export default function App() {
         return;
       }
 
-      // Read file contents
       const response = await fetch(file.uri);
       const text = await response.text();
       const parsed = parseTimetableJSON(text);
 
       updateSchedule(parsed);
-      setStatus(`Timetable uploaded! ${parsed.periods.length} periods, ${DAYS.length} days`);
+      setStatus(`Timetable uploaded! ${parsed.periods.length} periods loaded.`);
       Alert.alert("Success", `Timetable loaded with ${parsed.periods.length} periods across ${DAYS.length} days.`);
     } catch (_e) {
       console.warn("Upload error:", _e);
@@ -316,6 +360,81 @@ export default function App() {
     } finally {
       setUploading(false);
     }
+  }
+
+  async function handleUploadImage() {
+    try {
+      setUploading(true);
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert("Permission Denied", "Media library permission is required to pick images.");
+        setUploading(false);
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 1,
+      });
+
+      if (result.canceled) {
+        setUploading(false);
+        return;
+      }
+
+      const asset = result.assets ? result.assets[0] : result;
+      if (!asset || !asset.uri) {
+        Alert.alert("Error", "Could not read the selected image.");
+        setUploading(false);
+        return;
+      }
+
+      setUploadedImage(asset.uri);
+
+      // Run OCR
+      try {
+        const ocrResult = await OCR.recognize(asset.uri);
+        const text = ocrResult?.text || ocrResult?.blocks?.map((b) => b.text).join("\n") || "";
+        setOcrText(text);
+
+        // Try to parse times from OCR text
+        const parsed = parseOCRText(text);
+        updateSchedule(parsed);
+        setStatus(`Image processed! ${parsed.periods.length} periods extracted. Edit as needed.`);
+        Alert.alert(
+          "Image Processed",
+          `Extracted ${parsed.periods.length} periods from the image. Please review and edit the schedule. The OCR text is shown for reference.`
+        );
+        setShowOCRModal(true);
+      } catch (ocrErr) {
+        console.warn("OCR error:", ocrErr);
+        // Fall back to blank schedule with image reference
+        updateSchedule(createBlankSchedule());
+        setStatus("Image loaded. OCR failed — please enter data manually.");
+        Alert.alert(
+          "OCR Failed",
+          "Could not extract text from the image. The image is shown as reference. Please enter the schedule manually."
+        );
+        setShowOCRModal(true);
+      }
+    } catch (_e) {
+      console.warn("Image upload error:", _e);
+      Alert.alert("Upload Failed", _e.message || "Could not process the image.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function handleUpload() {
+    Alert.alert(
+      "Upload Timetable",
+      "Choose the type of file to upload:",
+      [
+        { text: "JSON File", onPress: handleUploadJSON },
+        { text: "Image (Photo)", onPress: handleUploadImage },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
   }
 
   function openEditor() {
@@ -430,6 +549,14 @@ export default function App() {
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <Text style={[styles.title, { fontSize: titleSize }]}>Period Timer — Timetable</Text>
         <Text style={styles.status}>{status}</Text>
+
+        {/* Uploaded Image Reference */}
+        {uploadedImage && (
+          <View style={styles.imageContainer}>
+            <Text style={styles.imageLabel}>Uploaded Timetable Image:</Text>
+            <Image source={{ uri: uploadedImage }} style={styles.uploadedImage} resizeMode="contain" />
+          </View>
+        )}
 
         {/* Action Buttons */}
         <View style={styles.buttonRow}>
@@ -546,6 +673,29 @@ export default function App() {
 
         <Text style={styles.footer}>Scheduled: {scheduled.length} alarms</Text>
       </ScrollView>
+
+      {/* OCR Text Reference Modal */}
+      <Modal visible={showOCRModal} animationType="slide" transparent={false} onRequestClose={() => setShowOCRModal(false)}>
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>OCR Extracted Text</Text>
+            <TouchableOpacity onPress={() => setShowOCRModal(false)} style={styles.closeBtn} activeOpacity={0.7}>
+              <Text style={styles.closeBtnText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent}>
+            <Text style={styles.ocrText}>{ocrText || "No text extracted."}</Text>
+            <Text style={styles.ocrHint}>
+              Review the extracted text above and edit the schedule using {'"'}Edit Periods{'"'} or by tapping subject/faculty fields.
+            </Text>
+          </ScrollView>
+          <View style={styles.modalFooter}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowOCRModal(false)} activeOpacity={0.7}>
+              <Text style={styles.cancelBtnText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </Modal>
 
       {/* Period Editor Modal */}
       <Modal visible={showEditor} animationType="slide" transparent={false} onRequestClose={closeEditor}>
@@ -691,6 +841,18 @@ const styles = StyleSheet.create({
   },
   saveBtnDisabled: { opacity: 0.6 },
   saveBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  imageContainer: {
+    marginBottom: 12,
+    padding: 8,
+    backgroundColor: "#f0f0f0",
+    borderRadius: 8,
+  },
+  imageLabel: { fontSize: 12, color: "#666", marginBottom: 4, fontWeight: "600" },
+  uploadedImage: {
+    width: "100%",
+    height: 200,
+    borderRadius: 8,
+  },
   day: { marginBottom: 10, padding: 8, backgroundColor: "#f2f2f2", borderRadius: 8 },
   dayTitle: { fontSize: 15, fontWeight: "bold", marginBottom: 6, color: "#2196F3" },
   periodRow: {
@@ -732,6 +894,8 @@ const styles = StyleSheet.create({
     minHeight: 36,
   },
   footer: { marginTop: 12, fontSize: 12, color: "#888" },
+  ocrText: { fontSize: 12, color: "#333", lineHeight: 18 },
+  ocrHint: { fontSize: 12, color: "#888", marginTop: 12, fontStyle: "italic" },
 
   // Modal styles
   modalContainer: { flex: 1, backgroundColor: "#f5f5f5" },

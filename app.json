@@ -10,7 +10,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.periodtimer.test",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification"
+        ]
       }
     },
     "android": {
@@ -35,9 +37,12 @@
         "expo-notifications",
         {
           "color": "#ffffff",
-          "sounds": ["./assets/buzzer.wav"]
+          "sounds": [
+            "./assets/buzzer.wav"
+          ]
         }
-      ]
+      ],
+      "expo-ocr-kit"
     ],
     "extra": {
       "eas": {
