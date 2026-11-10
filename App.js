@@ -412,6 +412,9 @@ export default function App() {
                 <View key={`${day}-${p.period}`} style={styles.periodRow}>
                   <View style={styles.periodInfo}>
                     <Text style={[styles.periodNum, { fontSize }]}>{p.period}</Text>
+                    <Text style={[styles.periodName, { fontSize: isSmallScreen ? 9 : 11 }]}>
+                      {p.name || `P${p.period}`}
+                    </Text>
                     <Text style={[styles.periodTime, { fontSize: isSmallScreen ? 10 : 12 }]}>
                       {formatTimeRange(p.time)}
                     </Text>
@@ -630,6 +633,7 @@ const styles = StyleSheet.create({
   },
   periodInfo: { width: 70, alignItems: "center" },
   periodNum: { fontSize: 14, fontWeight: "bold", color: "#333" },
+  periodName: { fontSize: 10, color: "#2196F3", fontWeight: "600", textAlign: "center" },
   periodTime: { fontSize: 11, color: "#666" },
   periodFields: { flex: 1, marginLeft: 8 },
   inlineText: {
