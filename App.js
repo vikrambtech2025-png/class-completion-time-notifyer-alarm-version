@@ -262,14 +262,25 @@ export default function App() {
       periods: editPeriods.map((p, i) => ({ ...p, period: i + 1 })),
       timetable: editTimetable,
     };
-    // Re-index timetable periods
+    // Ensure timetable has entries for all periods
     DAYS.forEach((day) => {
-      if (updated.timetable[day]) {
-        updated.timetable[day] = updated.timetable[day].map((e, i) => ({
-          ...e,
-          period: i + 1 <= updated.periods.length ? i + 1 : e.period,
-        }));
+      if (!updated.timetable[day]) {
+        updated.timetable[day] = [];
       }
+      // Pad or trim timetable to match periods count
+      while (updated.timetable[day].length < updated.periods.length) {
+        updated.timetable[day].push({
+          period: updated.timetable[day].length + 1,
+          subject: "",
+          faculty: "",
+        });
+      }
+      updated.timetable[day] = updated.timetable[day].slice(0, updated.periods.length);
+      // Re-index period numbers
+      updated.timetable[day] = updated.timetable[day].map((e, i) => ({
+        ...e,
+        period: i + 1,
+      }));
     });
     updateCurrentSemester(updated);
     await scheduleAll(updated.periods);
@@ -284,7 +295,7 @@ export default function App() {
   }
 
   function commitInlineEdit() {
-    if (!inlineEdit) return;
+    if (!inlineEdit) return null;
     const { day, periodIdx, field } = inlineEdit;
     const updated = JSON.parse(JSON.stringify(currentSemester));
     if (updated.timetable[day] && updated.timetable[day][periodIdx]) {
@@ -293,6 +304,7 @@ export default function App() {
     updateCurrentSemester(updated);
     setInlineEdit(null);
     setInlineValue("");
+    return updated;
   }
 
   // Responsive sizing
@@ -301,7 +313,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <Text style={[styles.title, { fontSize: titleSize }]}>Period Timer — Timetable</Text>
         <Text style={styles.status}>{status}</Text>
 
@@ -313,7 +325,11 @@ export default function App() {
               <TouchableOpacity
                 key={y}
                 style={[styles.selectorBtn, selectedYear === y && styles.selectorBtnActive]}
-                onPress={() => setSelectedYear(y)}
+                onPress={() => {
+                  setSelectedYear(y);
+                  setInlineEdit(null);
+                  setInlineValue("");
+                }}
                 activeOpacity={0.7}
                 hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
               >
@@ -333,7 +349,11 @@ export default function App() {
               <TouchableOpacity
                 key={s}
                 style={[styles.selectorBtn, selectedSemester === s && styles.selectorBtnActive]}
-                onPress={() => setSelectedSemester(s)}
+                onPress={() => {
+                  setSelectedSemester(s);
+                  setInlineEdit(null);
+                  setInlineValue("");
+                }}
                 activeOpacity={0.7}
                 hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
               >
@@ -361,7 +381,14 @@ export default function App() {
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-            onPress={() => scheduleAll(currentSemester.periods)}
+            onPress={() => {
+              let periods = currentSemester.periods;
+              if (inlineEdit) {
+                const updated = commitInlineEdit();
+                if (updated) periods = updated.periods;
+              }
+              scheduleAll(periods);
+            }}
             disabled={saving}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -396,6 +423,8 @@ export default function App() {
                         value={inlineValue}
                         onChangeText={setInlineValue}
                         onBlur={commitInlineEdit}
+                        onSubmitEditing={commitInlineEdit}
+                        returnKeyType="done"
                         autoFocus
                         placeholder="Subject"
                         placeholderTextColor="#999"
@@ -417,6 +446,8 @@ export default function App() {
                         value={inlineValue}
                         onChangeText={setInlineValue}
                         onBlur={commitInlineEdit}
+                        onSubmitEditing={commitInlineEdit}
+                        returnKeyType="done"
                         autoFocus
                         placeholder="Faculty"
                         placeholderTextColor="#999"
