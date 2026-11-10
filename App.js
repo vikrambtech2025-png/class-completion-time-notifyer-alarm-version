@@ -314,6 +314,8 @@ export default function App() {
                 key={y}
                 style={[styles.selectorBtn, selectedYear === y && styles.selectorBtnActive]}
                 onPress={() => setSelectedYear(y)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
               >
                 <Text style={[styles.selectorBtnText, selectedYear === y && styles.selectorBtnTextActive]}>
                   Y{y}
@@ -332,6 +334,8 @@ export default function App() {
                 key={s}
                 style={[styles.selectorBtn, selectedSemester === s && styles.selectorBtnActive]}
                 onPress={() => setSelectedSemester(s)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
               >
                 <Text style={[styles.selectorBtnText, selectedSemester === s && styles.selectorBtnTextActive]}>
                   S{s}
@@ -347,13 +351,20 @@ export default function App() {
 
         {/* Action Buttons */}
         <View style={styles.buttonRow}>
-          <TouchableOpacity style={styles.rescheduleBtn} onPress={openEditor}>
+          <TouchableOpacity
+            style={styles.rescheduleBtn}
+            onPress={openEditor}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
             <Text style={styles.rescheduleBtnText}>Edit Periods</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
             onPress={() => scheduleAll(currentSemester.periods)}
             disabled={saving}
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Text style={styles.saveBtnText}>Schedule Alarms</Text>
           </TouchableOpacity>
@@ -393,6 +404,7 @@ export default function App() {
                       <TouchableOpacity
                         style={styles.inlineText}
                         onPress={() => startInlineEdit(day, pIdx, "subject", entry.subject)}
+                        activeOpacity={0.7}
                       >
                         <Text style={[styles.inlineTextLabel, { fontSize }, !entry.subject && styles.placeholderText]}>
                           {entry.subject || "Tap to add subject"}
@@ -413,6 +425,7 @@ export default function App() {
                       <TouchableOpacity
                         style={styles.inlineText}
                         onPress={() => startInlineEdit(day, pIdx, "faculty", entry.faculty)}
+                        activeOpacity={0.7}
                       >
                         <Text style={[styles.inlineTextLabel, { fontSize: isSmallScreen ? 11 : 12 }, !entry.faculty && styles.placeholderText]}>
                           {entry.faculty || "Tap to add faculty"}
@@ -434,7 +447,7 @@ export default function App() {
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Edit Periods — {semesterKey}</Text>
-            <TouchableOpacity onPress={closeEditor} style={styles.closeBtn}>
+            <TouchableOpacity onPress={closeEditor} style={styles.closeBtn} activeOpacity={0.7}>
               <Text style={styles.closeBtnText}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -446,7 +459,7 @@ export default function App() {
                   <View style={styles.periodBadge}>
                     <Text style={styles.periodBadgeText}>P{index + 1}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => removePeriod(index)} style={styles.deleteBtn}>
+                  <TouchableOpacity onPress={() => removePeriod(index)} style={styles.deleteBtn} activeOpacity={0.7}>
                     <Text style={styles.deleteBtnText}>🗑</Text>
                   </TouchableOpacity>
                 </View>
@@ -492,22 +505,25 @@ export default function App() {
               </View>
             ))}
 
-            <TouchableOpacity style={styles.addBtn} onPress={addPeriod}>
+            <TouchableOpacity style={styles.addBtn} onPress={addPeriod} activeOpacity={0.7}>
               <Text style={styles.addBtnText}>+ Add Period</Text>
             </TouchableOpacity>
           </ScrollView>
 
           <View style={styles.modalFooter}>
-            <TouchableOpacity
-              style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
-              onPress={saveAndReschedule}
-              disabled={saving}
-            >
-              <Text style={styles.saveBtnText}>{saving ? "Saving..." : "Save & Schedule"}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.cancelBtn} onPress={closeEditor}>
-              <Text style={styles.cancelBtnText}>Cancel</Text>
-            </TouchableOpacity>
+            <View style={styles.modalFooterRow}>
+              <TouchableOpacity
+                style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+                onPress={saveAndReschedule}
+                disabled={saving}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.saveBtnText}>{saving ? "Saving..." : "Save & Schedule"}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.cancelBtn} onPress={closeEditor} activeOpacity={0.7}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </SafeAreaView>
       </Modal>
@@ -524,11 +540,14 @@ const styles = StyleSheet.create({
   selectorLabel: { fontSize: 14, fontWeight: "600", marginRight: 8, color: "#333" },
   selectorScroll: { flex: 1 },
   selectorBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 16,
     backgroundColor: "#eee",
     marginRight: 6,
+    minHeight: 36,
+    justifyContent: "center",
+    alignItems: "center",
   },
   selectorBtnActive: { backgroundColor: "#2196F3" },
   selectorBtnText: { fontSize: 13, color: "#333", fontWeight: "600" },
@@ -538,17 +557,33 @@ const styles = StyleSheet.create({
   rescheduleBtn: {
     flex: 1,
     backgroundColor: "#2196F3",
-    paddingVertical: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderRadius: 8,
     alignItems: "center",
+    minHeight: 44,
+    justifyContent: "center",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   rescheduleBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
   saveBtn: {
     flex: 1,
     backgroundColor: "#4CAF50",
-    paddingVertical: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderRadius: 8,
     alignItems: "center",
+    minHeight: 44,
+    justifyContent: "center",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   saveBtnDisabled: { opacity: 0.6 },
   saveBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
@@ -562,18 +597,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#e0e0e0",
   },
-  periodInfo: { width: 80, alignItems: "center" },
+  periodInfo: { width: 70, alignItems: "center" },
   periodNum: { fontSize: 14, fontWeight: "bold", color: "#333" },
   periodTime: { fontSize: 11, color: "#666" },
   periodFields: { flex: 1, marginLeft: 8 },
   inlineText: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     backgroundColor: "#fff",
-    borderRadius: 4,
-    marginBottom: 2,
+    borderRadius: 6,
+    marginBottom: 4,
     borderWidth: 1,
     borderColor: "#ddd",
+    minHeight: 36,
+    justifyContent: "center",
   },
   inlineTextLabel: { fontSize: 13, color: "#333" },
   placeholderText: { color: "#999", fontStyle: "italic" },
@@ -604,7 +641,7 @@ const styles = StyleSheet.create({
   closeBtn: { padding: 8 },
   closeBtnText: { fontSize: 20, color: "#fff", fontWeight: "bold" },
   modalScroll: { flex: 1 },
-  modalScrollContent: { padding: 16, paddingBottom: 20 },
+  modalScrollContent: { padding: 16, paddingBottom: 30 },
   periodCard: {
     backgroundColor: "#fff",
     borderRadius: 10,
@@ -629,7 +666,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   periodBadgeText: { color: "#fff", fontWeight: "bold", fontSize: 14 },
-  deleteBtn: { padding: 6 },
+  deleteBtn: {
+    padding: 8,
+    minWidth: 36,
+    minHeight: 36,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   deleteBtnText: { fontSize: 18 },
   fieldLabel: { fontSize: 13, fontWeight: "600", color: "#555", marginBottom: 4, marginTop: 8 },
   input: {
@@ -652,24 +695,50 @@ const styles = StyleSheet.create({
   timePreview: { fontSize: 13, color: "#2196F3", fontWeight: "600", textAlign: "center", marginTop: 6 },
   addBtn: {
     backgroundColor: "#4CAF50",
-    paddingVertical: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
     borderRadius: 8,
     alignItems: "center",
-    marginTop: 4,
-    marginBottom: 8,
+    marginTop: 8,
+    marginBottom: 12,
+    minHeight: 48,
+    justifyContent: "center",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   addBtnText: { color: "#fff", fontSize: 16, fontWeight: "600" },
   modalFooter: {
     padding: 16,
+    paddingBottom: Platform.OS === "ios" ? 30 : 16,
     backgroundColor: "#fff",
     borderTopWidth: 1,
     borderTopColor: "#eee",
+    elevation: 4,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  modalFooterRow: {
+    flexDirection: "row",
+    gap: 10,
   },
   cancelBtn: {
     backgroundColor: "#999",
     paddingVertical: 12,
+    paddingHorizontal: 16,
     borderRadius: 8,
     alignItems: "center",
+    minHeight: 44,
+    justifyContent: "center",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
   cancelBtnText: { color: "#fff", fontSize: 15, fontWeight: "600" },
 });
