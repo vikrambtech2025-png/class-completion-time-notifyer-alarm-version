@@ -14,8 +14,8 @@ import {
 } from "react-native";
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
+import * as DocumentPicker from "expo-document-picker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import timetableData from "./timetable.json";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -26,8 +26,7 @@ Notifications.setNotificationHandler({
   }),
 });
 
-const DAYS = timetableData.days;
-const DEFAULT_PERIODS = timetableData.defaultPeriods.map((p) => ({ ...p }));
+const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 function parseTime(t) {
   const [h, m] = t.split(":").map(Number);
@@ -61,7 +60,17 @@ function formatTimeRange(timeStr) {
   return `${formatTime12h(start)} - ${formatTime12h(end)}`;
 }
 
-function createBlankSemester() {
+const DEFAULT_PERIODS = [
+  { period: 1, time: "09:00-09:45", name: "Period 1" },
+  { period: 2, time: "09:45-10:35", name: "Period 2" },
+  { period: 3, time: "10:50-11:40", name: "Period 3" },
+  { period: 4, time: "11:40-12:30", name: "Period 4" },
+  { period: 5, time: "13:20-14:15", name: "Period 5" },
+  { period: 6, time: "14:15-15:10", name: "Period 6" },
+  { period: 7, time: "15:20-16:15", name: "Period 7" },
+];
+
+function createBlankSchedule() {
   const periods = DEFAULT_PERIODS.map((p) => ({ ...p }));
   const timetable = {};
   DAYS.forEach((day) => {
@@ -74,37 +83,116 @@ function createBlankSemester() {
   return { periods, timetable };
 }
 
-const STORAGE_KEY = "@period_timer_semesters";
+// Parse uploaded timetable JSON into app format
+function parseTimetableJSON(json) {
+  let data;
+  try {
+    data = typeof json === "string" ? JSON.parse(json) : json;
+  } catch (_e) {
+    throw new Error("Invalid JSON file");
+  }
+
+  // Extract periods
+  let periods = [];
+  if (Array.isArray(data.periods)) {
+    periods = data.periods.map((p, i) => ({
+      period: p.period || i + 1,
+      time: p.time || "09:00-09:45",
+      name: p.name || `Period ${p.period || i + 1}`,
+    }));
+  } else if (Array.isArray(data.defaultPeriods)) {
+    periods = data.defaultPeriods.map((p, i) => ({
+      period: p.period || i + 1,
+      time: p.time || "09:00-09:45",
+      name: p.name || `Period ${p.period || i + 1}`,
+    }));
+  } else {
+    // No periods found, use defaults
+    periods = DEFAULT_PERIODS.map((p) => ({ ...p }));
+  }
+
+  // Ensure we have at least 1 period
+  if (periods.length === 0) {
+    periods = DEFAULT_PERIODS.map((p) => ({ ...p }));
+  }
+
+  // Extract timetable
+  const timetable = {};
+  const sourceTimetable = data.timetable || {};
+
+  DAYS.forEach((day) => {
+    const dayEntries = sourceTimetable[day] || sourceTimetable[day.toLowerCase()] || [];
+    const entries = [];
+
+    if (Array.isArray(dayEntries)) {
+      dayEntries.forEach((entry) => {
+        if (entry.periods && Array.isArray(entry.periods)) {
+          // Multiple periods combined (e.g., lab)
+          entry.periods.forEach((pNum) => {
+            entries.push({
+              period: pNum,
+              subject: entry.subject || "",
+              faculty: Array.isArray(entry.faculty) ? entry.faculty.join(", ") : (entry.faculty || ""),
+            });
+          });
+        } else if (entry.period) {
+          entries.push({
+            period: entry.period,
+            subject: entry.subject || "",
+            faculty: Array.isArray(entry.faculty) ? entry.faculty.join(", ") : (entry.faculty || ""),
+          });
+        }
+      });
+    }
+
+    // Ensure entries for all periods
+    const periodNums = periods.map((p) => p.period);
+    periodNums.forEach((pNum) => {
+      if (!entries.find((e) => e.period === pNum)) {
+        entries.push({ period: pNum, subject: "", faculty: "" });
+      }
+    });
+
+    // Sort by period number
+    entries.sort((a, b) => a.period - b.period);
+
+    timetable[day] = entries;
+  });
+
+  return { periods, timetable };
+}
+
+const STORAGE_KEY = "@period_timer_schedule";
 
 export default function App() {
   const [status, setStatus] = useState("Initializing...");
   const [scheduled, setScheduled] = useState([]);
-  const [selectedYear, setSelectedYear] = useState(1);
-  const [selectedSemester, setSelectedSemester] = useState(1);
-  const [semesters, setSemesters] = useState({});
+  const [schedule, setSchedule] = useState(null);
   const [showEditor, setShowEditor] = useState(false);
   const [editPeriods, setEditPeriods] = useState([]);
   const [editTimetable, setEditTimetable] = useState({});
   const [saving, setSaving] = useState(false);
-  const [inlineEdit, setInlineEdit] = useState(null); // {day, periodIdx, field}
+  const [inlineEdit, setInlineEdit] = useState(null);
   const [inlineValue, setInlineValue] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   const screenData = Dimensions.get("window");
   const isSmallScreen = screenData.width < 360;
 
-  const semesterKey = `Y${selectedYear}S${selectedSemester}`;
-
-  // Load saved data
+  // Load saved schedule
   useEffect(() => {
     (async () => {
       try {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          setSemesters(parsed);
+          setSchedule(parsed);
+        } else {
+          setSchedule(createBlankSchedule());
         }
-      } catch (e) {
-        console.warn("Failed to load saved data", e);
+      } catch (_e) {
+        console.warn("Failed to load saved data", _e);
+        setSchedule(createBlankSchedule());
       }
 
       if (!Device.isDevice) {
@@ -116,7 +204,7 @@ export default function App() {
       if (existing !== "granted") {
         Alert.alert(
           "Notification Permission Required",
-          "This app needs notification permission to schedule period alarms. Please tap 'Allow' on the next screen.",
+          "This app needs notification permission to schedule period alarms.",
           [{ text: "OK" }]
         );
         const { status } = await Notifications.requestPermissionsAsync();
@@ -126,7 +214,7 @@ export default function App() {
         setStatus("Notification permission DENIED - alarms will not work!");
         Alert.alert(
           "Permission Denied",
-          "Without notification permission, alarms cannot be scheduled. Please enable notifications in your phone settings.",
+          "Without notification permission, alarms cannot be scheduled.",
           [{ text: "OK" }]
         );
         return;
@@ -143,30 +231,26 @@ export default function App() {
         });
       }
 
-      setStatus("Ready — select year & semester, then schedule");
+      setStatus("Ready — upload timetable or edit manually");
     })();
   }, []);
 
-  // Get current semester data (or create blank)
-  const currentSemester = semesters[semesterKey] || createBlankSemester();
+  const currentSchedule = schedule || createBlankSchedule();
 
-  // Save all semesters to AsyncStorage
-  const persistSemesters = useCallback(async (data) => {
+  const persistSchedule = useCallback(async (data) => {
     try {
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch (e) {
-      console.warn("Failed to save data", e);
+    } catch (_e) {
+      console.warn("Failed to save data", _e);
     }
   }, []);
 
-  // Update current semester data
-  const updateCurrentSemester = useCallback(
+  const updateSchedule = useCallback(
     (updated) => {
-      const next = { ...semesters, [semesterKey]: updated };
-      setSemesters(next);
-      persistSemesters(next);
+      setSchedule(updated);
+      persistSchedule(updated);
     },
-    [semesters, semesterKey, persistSemesters]
+    [persistSchedule]
   );
 
   async function scheduleAll(periodList) {
@@ -195,12 +279,48 @@ export default function App() {
       items.push({ period: pt.period, time: pt.time, name, id });
     }
     setScheduled(items);
-    setStatus(`Scheduled ${items.length} period alarms for ${semesterKey}`);
+    setStatus(`Scheduled ${items.length} period alarms`);
+  }
+
+  async function handleUpload() {
+    try {
+      setUploading(true);
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "application/json",
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) {
+        setUploading(false);
+        return;
+      }
+
+      const file = result.assets ? result.assets[0] : result;
+      if (!file || !file.uri) {
+        Alert.alert("Error", "Could not read the selected file.");
+        setUploading(false);
+        return;
+      }
+
+      // Read file contents
+      const response = await fetch(file.uri);
+      const text = await response.text();
+      const parsed = parseTimetableJSON(text);
+
+      updateSchedule(parsed);
+      setStatus(`Timetable uploaded! ${parsed.periods.length} periods, ${DAYS.length} days`);
+      Alert.alert("Success", `Timetable loaded with ${parsed.periods.length} periods across ${DAYS.length} days.`);
+    } catch (_e) {
+      console.warn("Upload error:", _e);
+      Alert.alert("Upload Failed", _e.message || "Could not parse the timetable file. Please ensure it's a valid JSON timetable.");
+    } finally {
+      setUploading(false);
+    }
   }
 
   function openEditor() {
-    setEditPeriods(currentSemester.periods.map((p) => ({ ...p })));
-    setEditTimetable(JSON.parse(JSON.stringify(currentSemester.timetable)));
+    setEditPeriods(currentSchedule.periods.map((p) => ({ ...p })));
+    setEditTimetable(JSON.parse(JSON.stringify(currentSchedule.timetable)));
     setShowEditor(true);
   }
 
@@ -224,7 +344,6 @@ export default function App() {
       name: `Period ${editPeriods.length + 1}`,
     };
     setEditPeriods((prev) => [...prev, newPeriod]);
-    // Add to timetable for all days
     setEditTimetable((prev) => {
       const next = { ...prev };
       DAYS.forEach((day) => {
@@ -262,12 +381,10 @@ export default function App() {
       periods: editPeriods.map((p, i) => ({ ...p, period: i + 1 })),
       timetable: editTimetable,
     };
-    // Ensure timetable has entries for all periods
     DAYS.forEach((day) => {
       if (!updated.timetable[day]) {
         updated.timetable[day] = [];
       }
-      // Pad or trim timetable to match periods count
       while (updated.timetable[day].length < updated.periods.length) {
         updated.timetable[day].push({
           period: updated.timetable[day].length + 1,
@@ -276,19 +393,17 @@ export default function App() {
         });
       }
       updated.timetable[day] = updated.timetable[day].slice(0, updated.periods.length);
-      // Re-index period numbers
       updated.timetable[day] = updated.timetable[day].map((e, i) => ({
         ...e,
         period: i + 1,
       }));
     });
-    updateCurrentSemester(updated);
+    updateSchedule(updated);
     await scheduleAll(updated.periods);
     setSaving(false);
     setShowEditor(false);
   }
 
-  // Inline editing handlers
   function startInlineEdit(day, periodIdx, field, currentValue) {
     setInlineEdit({ day, periodIdx, field });
     setInlineValue(currentValue || "");
@@ -297,17 +412,16 @@ export default function App() {
   function commitInlineEdit() {
     if (!inlineEdit) return null;
     const { day, periodIdx, field } = inlineEdit;
-    const updated = JSON.parse(JSON.stringify(currentSemester));
+    const updated = JSON.parse(JSON.stringify(currentSchedule));
     if (updated.timetable[day] && updated.timetable[day][periodIdx]) {
       updated.timetable[day][periodIdx][field] = inlineValue;
     }
-    updateCurrentSemester(updated);
+    updateSchedule(updated);
     setInlineEdit(null);
     setInlineValue("");
     return updated;
   }
 
-  // Responsive sizing
   const fontSize = isSmallScreen ? 12 : 14;
   const titleSize = isSmallScreen ? 18 : 22;
 
@@ -317,72 +431,30 @@ export default function App() {
         <Text style={[styles.title, { fontSize: titleSize }]}>Period Timer — Timetable</Text>
         <Text style={styles.status}>{status}</Text>
 
-        {/* Year Selector */}
-        <View style={styles.selectorRow}>
-          <Text style={styles.selectorLabel}>Year:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectorScroll}>
-            {[1, 2, 3, 4].map((y) => (
-              <TouchableOpacity
-                key={y}
-                style={[styles.selectorBtn, selectedYear === y && styles.selectorBtnActive]}
-                onPress={() => {
-                  setSelectedYear(y);
-                  setInlineEdit(null);
-                  setInlineValue("");
-                }}
-                activeOpacity={0.7}
-                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-              >
-                <Text style={[styles.selectorBtnText, selectedYear === y && styles.selectorBtnTextActive]}>
-                  Y{y}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Semester Selector */}
-        <View style={styles.selectorRow}>
-          <Text style={styles.selectorLabel}>Sem:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.selectorScroll}>
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
-              <TouchableOpacity
-                key={s}
-                style={[styles.selectorBtn, selectedSemester === s && styles.selectorBtnActive]}
-                onPress={() => {
-                  setSelectedSemester(s);
-                  setInlineEdit(null);
-                  setInlineValue("");
-                }}
-                activeOpacity={0.7}
-                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-              >
-                <Text style={[styles.selectorBtnText, selectedSemester === s && styles.selectorBtnTextActive]}>
-                  S{s}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        <Text style={styles.semesterLabel}>
-          {semesterKey} — {currentSemester.periods.length} periods, {DAYS.length} days
-        </Text>
-
         {/* Action Buttons */}
         <View style={styles.buttonRow}>
+          <TouchableOpacity
+            style={styles.uploadBtn}
+            onPress={handleUpload}
+            activeOpacity={0.7}
+            disabled={uploading}
+          >
+            <Text style={styles.uploadBtnText}>{uploading ? "Uploading..." : "Upload Timetable"}</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.rescheduleBtn}
             onPress={openEditor}
             activeOpacity={0.7}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Text style={styles.rescheduleBtnText}>Edit Periods</Text>
           </TouchableOpacity>
+        </View>
+
+        <View style={styles.buttonRow}>
           <TouchableOpacity
             style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
             onPress={() => {
-              let periods = currentSemester.periods;
+              let periods = currentSchedule.periods;
               if (inlineEdit) {
                 const updated = commitInlineEdit();
                 if (updated) periods = updated.periods;
@@ -391,7 +463,6 @@ export default function App() {
             }}
             disabled={saving}
             activeOpacity={0.7}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
             <Text style={styles.saveBtnText}>Schedule Alarms</Text>
           </TouchableOpacity>
@@ -401,8 +472,8 @@ export default function App() {
         {DAYS.map((day) => (
           <View key={day} style={styles.day}>
             <Text style={styles.dayTitle}>{day}</Text>
-            {currentSemester.periods.map((p, pIdx) => {
-              const entry = currentSemester.timetable[day]?.[pIdx] || { subject: "", faculty: "" };
+            {currentSchedule.periods.map((p, pIdx) => {
+              const entry = currentSchedule.timetable[day]?.[pIdx] || { subject: "", faculty: "" };
               const isEditingSubject =
                 inlineEdit?.day === day && inlineEdit?.periodIdx === pIdx && inlineEdit?.field === "subject";
               const isEditingFaculty =
@@ -480,7 +551,7 @@ export default function App() {
       <Modal visible={showEditor} animationType="slide" transparent={false} onRequestClose={closeEditor}>
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Edit Periods — {semesterKey}</Text>
+            <Text style={styles.modalTitle}>Edit Periods</Text>
             <TouchableOpacity onPress={closeEditor} style={styles.closeBtn} activeOpacity={0.7}>
               <Text style={styles.closeBtnText}>✕</Text>
             </TouchableOpacity>
@@ -570,24 +641,23 @@ const styles = StyleSheet.create({
   scrollContent: { padding: 12, paddingBottom: 40 },
   title: { fontSize: 22, fontWeight: "bold", marginBottom: 4 },
   status: { fontSize: 13, color: "#555", marginBottom: 10 },
-  selectorRow: { flexDirection: "row", alignItems: "center", marginBottom: 8 },
-  selectorLabel: { fontSize: 14, fontWeight: "600", marginRight: 8, color: "#333" },
-  selectorScroll: { flex: 1 },
-  selectorBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: "#eee",
-    marginRight: 6,
-    minHeight: 36,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  selectorBtnActive: { backgroundColor: "#2196F3" },
-  selectorBtnText: { fontSize: 13, color: "#333", fontWeight: "600" },
-  selectorBtnTextActive: { color: "#fff" },
-  semesterLabel: { fontSize: 13, color: "#666", marginBottom: 8, fontStyle: "italic" },
   buttonRow: { flexDirection: "row", gap: 8, marginBottom: 12 },
+  uploadBtn: {
+    flex: 1,
+    backgroundColor: "#FF9800",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    minHeight: 44,
+    justifyContent: "center",
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  uploadBtnText: { color: "#fff", fontSize: 14, fontWeight: "600" },
   rescheduleBtn: {
     flex: 1,
     backgroundColor: "#2196F3",
@@ -650,15 +720,16 @@ const styles = StyleSheet.create({
   inlineTextLabel: { fontSize: 13, color: "#333" },
   placeholderText: { color: "#999", fontStyle: "italic" },
   inlineInput: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     backgroundColor: "#fff",
-    borderRadius: 4,
-    marginBottom: 2,
+    borderRadius: 6,
+    marginBottom: 4,
     borderWidth: 1,
     borderColor: "#2196F3",
     fontSize: 13,
     color: "#333",
+    minHeight: 36,
   },
   footer: { marginTop: 12, fontSize: 12, color: "#888" },
 
@@ -673,7 +744,13 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === "ios" ? 50 : 16,
   },
   modalTitle: { fontSize: 18, fontWeight: "bold", color: "#fff" },
-  closeBtn: { padding: 8 },
+  closeBtn: {
+    padding: 8,
+    minWidth: 36,
+    minHeight: 36,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   closeBtnText: { fontSize: 20, color: "#fff", fontWeight: "bold" },
   modalScroll: { flex: 1 },
   modalScrollContent: { padding: 16, paddingBottom: 30 },
