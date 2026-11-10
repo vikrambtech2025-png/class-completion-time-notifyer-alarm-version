@@ -4,6 +4,8 @@ import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import timetableData from "./timetable.json";
 
+// Remove expo-av import and usage to fix native library crash
+
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
