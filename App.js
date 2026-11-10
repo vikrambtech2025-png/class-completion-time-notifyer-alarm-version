@@ -740,36 +740,45 @@ export default function App() {
 
       {/* Bottom Action Bar */}
       <View style={styles.bottomBar}>
-        <TouchableOpacity
-          style={[styles.bottomBtn, styles.uploadBtn, uploading && styles.saveBtnDisabled]}
-          onPress={handleUpload}
-          activeOpacity={0.7}
-          disabled={uploading}
-        >
-          <Text style={styles.bottomBtnText}>{uploading ? "Uploading..." : "Upload"}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.bottomBtn, styles.rescheduleBtn]}
-          onPress={openEditor}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.bottomBtnText}>Edit Periods</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.bottomBtn, styles.saveBtn, saving && styles.saveBtnDisabled]}
-          onPress={() => {
-            let periods = currentSchedule.periods;
-            if (inlineEdit) {
-              const updated = commitInlineEdit();
-              if (updated) periods = updated.periods;
-            }
-            scheduleAll(periods);
-          }}
-          disabled={saving}
-          activeOpacity={0.7}
-        >
-          <Text style={styles.bottomBtnText}>Schedule Alarms</Text>
-        </TouchableOpacity>
+        <View style={styles.bottomBtnGroup}>
+          <TouchableOpacity
+            style={[styles.bottomBtn, styles.uploadBtn, uploading && styles.saveBtnDisabled]}
+            onPress={handleUpload}
+            activeOpacity={0.7}
+            disabled={uploading}
+          >
+            <Text style={styles.bottomBtnText}>{uploading ? "Uploading..." : "Upload Timetable"}</Text>
+          </TouchableOpacity>
+          <Text style={styles.btnHint}>Load JSON or photo</Text>
+        </View>
+        <View style={styles.bottomBtnGroup}>
+          <TouchableOpacity
+            style={[styles.bottomBtn, styles.rescheduleBtn]}
+            onPress={openEditor}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.bottomBtnText}>Edit Periods</Text>
+          </TouchableOpacity>
+          <Text style={styles.btnHint}>Change times & names</Text>
+        </View>
+        <View style={styles.bottomBtnGroup}>
+          <TouchableOpacity
+            style={[styles.bottomBtn, styles.saveBtn, saving && styles.saveBtnDisabled]}
+            onPress={() => {
+              let periods = currentSchedule.periods;
+              if (inlineEdit) {
+                const updated = commitInlineEdit();
+                if (updated) periods = updated.periods;
+              }
+              scheduleAll(periods);
+            }}
+            disabled={saving}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.bottomBtnText}>Schedule Alarms</Text>
+          </TouchableOpacity>
+          <Text style={styles.btnHint}>Set buzzer alarms</Text>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -851,15 +860,20 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     gap: 8,
   },
-  bottomBtn: {
+  bottomBtnGroup: {
     flex: 1,
+    alignItems: "center",
+  },
+  bottomBtn: {
+    width: "100%",
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
     minHeight: 44,
   },
-  bottomBtnText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  bottomBtnText: { color: "#fff", fontSize: 12, fontWeight: "600" },
+  btnHint: { fontSize: 9, color: "#888", marginTop: 2, textAlign: "center" },
 
   // Modal styles
   modalContainer: { flex: 1, backgroundColor: "#f5f5f5" },
