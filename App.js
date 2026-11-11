@@ -214,6 +214,49 @@ function parseOCRText(text, blocks) {
   return { periods, timetable };
 }
 
+// Preprocess image for better OCR results
+async function preprocessImage(uri) {
+  try {
+    // Get image dimensions
+    const info = await ImageManipulator.manipulateAsync(
+      uri,
+      [],
+      { format: ImageManipulator.SaveFormat.JPEG }
+    );
+
+    const width = info.width;
+    const height = info.height;
+    console.log("Original image dimensions:", width, "x", height);
+
+    // Crop outer margins (remove 5% from each edge)
+    const cropMargin = 0.05;
+    const cropX = Math.round(width * cropMargin);
+    const cropY = Math.round(height * cropMargin);
+    const cropW = Math.round(width * (1 - 2 * cropMargin));
+    const cropH = Math.round(height * (1 - 2 * cropMargin));
+
+    // Upscale if image is small (target min 1200px on longest side)
+    const maxDim = Math.max(cropW, cropH);
+    const scale = maxDim < 1200 ? 2 : 1;
+    const targetWidth = Math.round(cropW * scale);
+
+    const processed = await ImageManipulator.manipulateAsync(
+      uri,
+      [
+        { crop: { originX: cropX, originY: cropY, width: cropW, height: cropH } },
+        { resize: { width: targetWidth } },
+      ],
+      { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
+    );
+
+    console.log("Preprocessed dimensions:", processed.width, "x", processed.height);
+    return processed.uri;
+  } catch (err) {
+    console.warn("Preprocessing failed, using original:", err);
+    return uri;
+  }
+}
+
 const STORAGE_KEY = "@period_timer_schedule";
 
 export default function App() {
@@ -400,22 +443,9 @@ export default function App() {
       setUploadedImage(asset.uri);
 
       try {
-        // Preprocess image: resize to optimal dimensions for OCR
+        // Preprocess image: crop margins, upscale for better OCR
         console.log("Original image URI:", asset.uri);
-
-        let processedUri = asset.uri;
-        try {
-          const manipulated = await ImageManipulator.manipulateAsync(
-            asset.uri,
-            [{ resize: { width: 1500 } }],
-            { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
-          );
-          processedUri = manipulated.uri;
-          console.log("Preprocessed image URI:", processedUri);
-        } catch (manipErr) {
-          console.warn("Image manipulation failed, using original:", manipErr);
-          processedUri = asset.uri;
-        }
+        const processedUri = await preprocessImage(asset.uri);
 
         // Run OCR on preprocessed image
         const ocrResult = await recognizeText(processedUri);
