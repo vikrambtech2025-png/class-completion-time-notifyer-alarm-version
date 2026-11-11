@@ -232,9 +232,9 @@ async function preprocessImage(uri) {
     const height = info.height;
     console.log("[Preprocess] Original image dimensions:", width, "x", height);
 
-    // Upscale aggressively - target at least 2000px on longest side
+    // Upscale aggressively - target at least 3000px on longest side for small text
     const maxDim = Math.max(width, height);
-    const scale = maxDim < 2000 ? Math.ceil(2000 / maxDim) : 1;
+    const scale = maxDim < 3000 ? Math.ceil(3000 / maxDim) : 1;
     const targetWidth = Math.round(width * scale);
 
     console.log("[Preprocess] Scale factor:", scale, "target width:", targetWidth);
@@ -441,39 +441,60 @@ export default function App() {
       setUploadedImage(asset.uri);
 
       try {
-        // Try OCR on original image first
-        console.log("[OCR] Trying original image...");
+        // Try OCR on multiple versions of the image
+        console.log("[OCR] Starting multi-scale OCR...");
         let bestText = "";
         let bestResult = null;
 
+        // Version 1: Original image
         try {
+          console.log("[OCR] Trying original image...");
           const origResult = await recognizeText(asset.uri);
           const origText = origResult?.text || (Array.isArray(origResult?.blocks) ? origResult.blocks.map((b) => (typeof b.text === "string" ? b.text : "")).join("\n") : "") || "";
-          console.log("[OCR] Original image text length:", origText.length);
-          console.log("[OCR] Original image text:", origText.substring(0, 200));
+          console.log("[OCR] Original text length:", origText.length, "text:", origText.substring(0, 100));
           if (origText.length > bestText.length) {
             bestText = origText;
             bestResult = origResult;
           }
         } catch (e1) {
-          console.warn("[OCR] Original image failed:", e1?.message);
+          console.warn("[OCR] Original failed:", e1?.message);
         }
 
-        // Try OCR on preprocessed image
+        // Version 2: Preprocessed (upscaled 3x)
         console.log("[OCR] Preprocessing image...");
         const processedUri = await preprocessImage(asset.uri);
-        console.log("[OCR] Processed URI:", processedUri);
         try {
+          console.log("[OCR] Trying preprocessed image...");
           const procResult = await recognizeText(processedUri);
           const procText = procResult?.text || (Array.isArray(procResult?.blocks) ? procResult.blocks.map((b) => (typeof b.text === "string" ? b.text : "")).join("\n") : "") || "";
-          console.log("[OCR] Preprocessed image text length:", procText.length);
-          console.log("[OCR] Preprocessed image text:", procText.substring(0, 200));
+          console.log("[OCR] Preprocessed text length:", procText.length, "text:", procText.substring(0, 100));
           if (procText.length > bestText.length) {
             bestText = procText;
             bestResult = procResult;
           }
         } catch (e2) {
-          console.warn("[OCR] Preprocessed image failed:", e2?.message);
+          console.warn("[OCR] Preprocessed failed:", e2?.message);
+        }
+
+        // Version 3: Upscale 2x only (no crop)
+        try {
+          console.log("[OCR] Trying 2x upscale...");
+          const info = await ImageManipulator.manipulateAsync(asset.uri, [], { format: ImageManipulator.SaveFormat.JPEG });
+          const scale2 = info.width < 1500 ? 2 : 1;
+          const upscaled2 = await ImageManipulator.manipulateAsync(
+            asset.uri,
+            [{ resize: { width: Math.round(info.width * scale2) } }],
+            { compress: 1.0, format: ImageManipulator.SaveFormat.JPEG }
+          );
+          const result2 = await recognizeText(upscaled2.uri);
+          const text2 = result2?.text || (Array.isArray(result2?.blocks) ? result2.blocks.map((b) => (typeof b.text === "string" ? b.text : "")).join("\n") : "") || "";
+          console.log("[OCR] 2x upscale text length:", text2.length, "text:", text2.substring(0, 100));
+          if (text2.length > bestText.length) {
+            bestText = text2;
+            bestResult = result2;
+          }
+        } catch (e3) {
+          console.warn("[OCR] 2x upscale failed:", e3?.message);
         }
 
         const ocrResult = bestResult || {};
