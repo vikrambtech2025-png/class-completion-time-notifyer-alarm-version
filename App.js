@@ -17,6 +17,7 @@ import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
+import * as ImageManipulator from "expo-image-manipulator";
 import { recognizeText } from "expo-ocr-kit";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
@@ -183,7 +184,7 @@ function extractTimesFromText(text) {
   return times;
 }
 
-function parseOCRText(text) {
+function parseOCRText(text, blocks) {
   const times = extractTimesFromText(text);
   const periods = [];
 
@@ -399,14 +400,41 @@ export default function App() {
       setUploadedImage(asset.uri);
 
       try {
-        const ocrResult = await recognizeText(asset.uri);
-        console.log("OCR Result:", JSON.stringify(ocrResult));
-        const text = ocrResult?.text || (Array.isArray(ocrResult?.blocks) ? ocrResult.blocks.map((b) => b.text || "").join("\n") : "") || "";
+        // Preprocess image: resize to optimal dimensions for OCR
+        console.log("Original image URI:", asset.uri);
+
+        let processedUri = asset.uri;
+        try {
+          const manipulated = await ImageManipulator.manipulateAsync(
+            asset.uri,
+            [{ resize: { width: 1500 } }],
+            { compress: 0.9, format: ImageManipulator.SaveFormat.JPEG }
+          );
+          processedUri = manipulated.uri;
+          console.log("Preprocessed image URI:", processedUri);
+        } catch (manipErr) {
+          console.warn("Image manipulation failed, using original:", manipErr);
+          processedUri = asset.uri;
+        }
+
+        // Run OCR on preprocessed image
+        const ocrResult = await recognizeText(processedUri);
+        console.log("OCR Result:", JSON.stringify(ocrResult).substring(0, 500));
+
+        // Extract text from OCR result
+        let text = "";
+        if (ocrResult?.text && typeof ocrResult.text === "string") {
+          text = ocrResult.text;
+        }
+        if (!text && Array.isArray(ocrResult?.blocks)) {
+          text = ocrResult.blocks.map((b) => (typeof b.text === "string" ? b.text : "")).join("\\n");
+        }
+
         setOcrText(text || "No text detected by OCR.");
 
         if (!text || text.trim().length === 0) {
           updateSchedule(createBlankSchedule());
-          setStatus("Image loaded. No text detected — please enter data manually.");
+          setStatus("Image loaded. No text detected - please enter data manually.");
           Alert.alert(
             "No Text Detected",
             "OCR could not detect any text in the image. The image is shown as reference. Please enter the schedule manually using 'Edit Periods'."
@@ -415,7 +443,8 @@ export default function App() {
           return;
         }
 
-        const parsed = parseOCRText(text);
+        // Parse OCR text into schedule
+        const parsed = parseOCRText(text, ocrResult?.blocks);
         updateSchedule(parsed);
         const timesFound = extractTimesFromText(text);
         setStatus(`Image processed! ${parsed.periods.length} periods, ${timesFound.length} times found. Edit as needed.`);
@@ -427,7 +456,7 @@ export default function App() {
       } catch (ocrErr) {
         console.warn("OCR error:", ocrErr);
         updateSchedule(createBlankSchedule());
-        setStatus("Image loaded. OCR failed — please enter data manually.");
+        setStatus("Image loaded. OCR failed - please enter data manually.");
         Alert.alert(
           "OCR Failed",
           `OCR error: ${ocrErr?.message || "Unknown error"}. The image is shown as reference. Please enter the schedule manually using 'Edit Periods'.`

@@ -7,6 +7,7 @@
     "expo": "~58.0.23",
     "expo-device": "^58.0.5",
     "expo-document-picker": "~58.0.4",
+    "expo-image-manipulator": "~58.0.16",
     "expo-image-picker": "~58.0.10",
     "expo-notifications": "^58.1.8",
     "expo-ocr-kit": "^0.1.4",
