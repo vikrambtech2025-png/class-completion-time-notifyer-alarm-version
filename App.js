@@ -673,40 +673,34 @@ export default function App() {
 
       {/* Bottom Action Bar */}
       <View style={styles.bottomBar}>
-        <View style={styles.bottomBtnGroup}>
-          <TouchableOpacity
-            style={[styles.bottomBtn, styles.uploadBtn, uploading && styles.saveBtnDisabled]}
-            onPress={handleUpload}
-            activeOpacity={0.7}
-            disabled={uploading}
-          >
-            <Text style={styles.bottomBtnText}>{uploading ? "Uploading..." : "Upload Timetable"}</Text>
-          </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.bottomBtn, styles.uploadBtn, uploading && styles.saveBtnDisabled]}
+          onPress={handleUpload}
+          activeOpacity={0.7}
+          disabled={uploading}
+        >
+          <Text style={styles.bottomBtnText}>{uploading ? "Uploading..." : "Upload Timetable"}</Text>
           <Text style={styles.btnHint}>Load JSON or photo</Text>
-        </View>
-        <View style={styles.bottomBtnGroup}>
-          <TouchableOpacity
-            style={[styles.bottomBtn, styles.rescheduleBtn]}
-            onPress={openEditor}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.bottomBtnText}>Edit Periods</Text>
-          </TouchableOpacity>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.bottomBtn, styles.rescheduleBtn]}
+          onPress={openEditor}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.bottomBtnText}>Edit Periods</Text>
           <Text style={styles.btnHint}>Change times & names</Text>
-        </View>
-        <View style={styles.bottomBtnGroup}>
-          <TouchableOpacity
-            style={[styles.bottomBtn, styles.saveBtn, saving && styles.saveBtnDisabled]}
-            onPress={() => {
-              scheduleAll(currentSchedule.periods);
-            }}
-            disabled={saving}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.bottomBtnText}>Schedule Alarms</Text>
-          </TouchableOpacity>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.bottomBtn, styles.saveBtn, saving && styles.saveBtnDisabled]}
+          onPress={() => {
+            scheduleAll(currentSchedule.periods);
+          }}
+          disabled={saving}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.bottomBtnText}>Schedule Alarms</Text>
           <Text style={styles.btnHint}>Set buzzer alarms</Text>
-        </View>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -790,14 +784,9 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     gap: 6,
   },
-  bottomBtnGroup: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   bottomBtn: {
-    width: "100%",
-    paddingVertical: 14,
+    flex: 1,
+    paddingVertical: 10,
     paddingHorizontal: 4,
     borderRadius: 10,
     alignItems: "center",
