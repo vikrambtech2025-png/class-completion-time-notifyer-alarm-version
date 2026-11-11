@@ -157,14 +157,27 @@ function parseTimetableJSON(json) {
 }
 
 function extractTimesFromText(text) {
-  const timePattern = /(\d{1,2}):(\d{2})/g;
+  if (!text) return [];
   const times = [];
+  // Match HH:MM or H:MM or HH.MM or H.MM (colon or dot separator)
+  const timePattern = /(\d{1,2})[:.](\d{2})/g;
   let match;
   while ((match = timePattern.exec(text)) !== null) {
     const h = parseInt(match[1], 10);
     const m = parseInt(match[2], 10);
     if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
       times.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
+    }
+  }
+  // Also try to match 4-digit times like "0900" or "09 00"
+  const timePattern2 = /(\d{2})\s+(\d{2})/g;
+  let match2;
+  while ((match2 = timePattern2.exec(text)) !== null) {
+    const h = parseInt(match2[1], 10);
+    const m = parseInt(match2[2], 10);
+    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
+      const t = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      if (!times.includes(t)) times.push(t);
     }
   }
   return times;
@@ -210,8 +223,7 @@ export default function App() {
   const [editPeriods, setEditPeriods] = useState([]);
   const [editTimetable, setEditTimetable] = useState({});
   const [saving, setSaving] = useState(false);
-  const [inlineEdit, setInlineEdit] = useState(null);
-  const [inlineValue, setInlineValue] = useState("");
+  // (inline editing removed - main page cleared)
   const [uploading, setUploading] = useState(false);
   const [ocrText, setOcrText] = useState("");
   const [showOCRModal, setShowOCRModal] = useState(false);
@@ -388,15 +400,28 @@ export default function App() {
 
       try {
         const ocrResult = await recognizeText(asset.uri);
-        const text = ocrResult?.text || ocrResult?.blocks?.map((b) => b.text).join("\n") || "";
-        setOcrText(text);
+        console.log("OCR Result:", JSON.stringify(ocrResult));
+        const text = ocrResult?.text || (Array.isArray(ocrResult?.blocks) ? ocrResult.blocks.map((b) => b.text || "").join("\n") : "") || "";
+        setOcrText(text || "No text detected by OCR.");
+
+        if (!text || text.trim().length === 0) {
+          updateSchedule(createBlankSchedule());
+          setStatus("Image loaded. No text detected — please enter data manually.");
+          Alert.alert(
+            "No Text Detected",
+            "OCR could not detect any text in the image. The image is shown as reference. Please enter the schedule manually using 'Edit Periods'."
+          );
+          setShowOCRModal(true);
+          return;
+        }
 
         const parsed = parseOCRText(text);
         updateSchedule(parsed);
-        setStatus(`Image processed! ${parsed.periods.length} periods extracted. Edit as needed.`);
+        const timesFound = extractTimesFromText(text);
+        setStatus(`Image processed! ${parsed.periods.length} periods, ${timesFound.length} times found. Edit as needed.`);
         Alert.alert(
           "Image Processed",
-          `Extracted ${parsed.periods.length} periods from the image. Please review and edit the schedule. The OCR text is shown for reference.`
+          `Extracted ${timesFound.length} time values and ${parsed.periods.length} periods from the image. Please review and edit the schedule. The OCR text is shown for reference.`
         );
         setShowOCRModal(true);
       } catch (ocrErr) {
@@ -405,7 +430,7 @@ export default function App() {
         setStatus("Image loaded. OCR failed — please enter data manually.");
         Alert.alert(
           "OCR Failed",
-          "Could not extract text from the image. The image is shown as reference. Please enter the schedule manually."
+          `OCR error: ${ocrErr?.message || "Unknown error"}. The image is shown as reference. Please enter the schedule manually using 'Edit Periods'.`
         );
         setShowOCRModal(true);
       }
@@ -515,25 +540,8 @@ export default function App() {
     setShowEditor(false);
   }
 
-  function startInlineEdit(day, periodIdx, field, currentValue) {
-    setInlineEdit({ day, periodIdx, field });
-    setInlineValue(currentValue || "");
-  }
+  // (inline editing removed - main page cleared)
 
-  function commitInlineEdit() {
-    if (!inlineEdit) return null;
-    const { day, periodIdx, field } = inlineEdit;
-    const updated = JSON.parse(JSON.stringify(currentSchedule));
-    if (updated.timetable[day] && updated.timetable[day][periodIdx]) {
-      updated.timetable[day][periodIdx][field] = inlineValue;
-    }
-    updateSchedule(updated);
-    setInlineEdit(null);
-    setInlineValue("");
-    return updated;
-  }
-
-  const fontSize = isSmallScreen ? 12 : 14;
   const titleSize = isSmallScreen ? 18 : 22;
 
   return (
@@ -550,82 +558,6 @@ export default function App() {
           </View>
         )}
 
-        {/* Timetable Grid - shows updated schedule */}
-        {DAYS.map((day) => (
-          <View key={day} style={styles.day}>
-            <Text style={styles.dayTitle}>{day}</Text>
-            {currentSchedule.periods.map((p, pIdx) => {
-              const entry = currentSchedule.timetable[day]?.[pIdx] || { subject: "", faculty: "" };
-              const isEditingSubject =
-                inlineEdit?.day === day && inlineEdit?.periodIdx === pIdx && inlineEdit?.field === "subject";
-              const isEditingFaculty =
-                inlineEdit?.day === day && inlineEdit?.periodIdx === pIdx && inlineEdit?.field === "faculty";
-
-              return (
-                <View key={`${day}-${p.period}`} style={styles.periodRow}>
-                  <View style={styles.periodInfo}>
-                    <Text style={[styles.periodNum, { fontSize }]}>{p.period}</Text>
-                    <Text style={[styles.periodName, { fontSize: isSmallScreen ? 9 : 11 }]}>
-                      {p.name || `P${p.period}`}
-                    </Text>
-                    <Text style={[styles.periodTime, { fontSize: isSmallScreen ? 10 : 12 }]}>
-                      {formatTimeRange(p.time)}
-                    </Text>
-                  </View>
-                  <View style={styles.periodFields}>
-                    {isEditingSubject ? (
-                      <TextInput
-                        style={[styles.inlineInput, { fontSize }]}
-                        value={inlineValue}
-                        onChangeText={setInlineValue}
-                        onBlur={commitInlineEdit}
-                        onSubmitEditing={commitInlineEdit}
-                        returnKeyType="done"
-                        autoFocus
-                        placeholder="Subject"
-                        placeholderTextColor="#999"
-                      />
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.inlineText}
-                        onPress={() => startInlineEdit(day, pIdx, "subject", entry.subject)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={[styles.inlineTextLabel, { fontSize }, !entry.subject && styles.placeholderText]}>
-                          {entry.subject || "Tap to add subject"}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                    {isEditingFaculty ? (
-                      <TextInput
-                        style={[styles.inlineInput, { fontSize }]}
-                        value={inlineValue}
-                        onChangeText={setInlineValue}
-                        onBlur={commitInlineEdit}
-                        onSubmitEditing={commitInlineEdit}
-                        returnKeyType="done"
-                        autoFocus
-                        placeholder="Faculty"
-                        placeholderTextColor="#999"
-                      />
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.inlineText}
-                        onPress={() => startInlineEdit(day, pIdx, "faculty", entry.faculty)}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={[styles.inlineTextLabel, { fontSize: isSmallScreen ? 11 : 12 }, !entry.faculty && styles.placeholderText]}>
-                          {entry.faculty || "Tap to add faculty"}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-        ))}
-
         <Text style={styles.footer}>Scheduled: {scheduled.length} alarms</Text>
       </ScrollView>
 
@@ -639,9 +571,10 @@ export default function App() {
             </TouchableOpacity>
           </View>
           <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent}>
+            <Text style={styles.ocrLabel}>Raw OCR Text:</Text>
             <Text style={styles.ocrText}>{ocrText || "No text extracted."}</Text>
             <Text style={styles.ocrHint}>
-              Review the extracted text above and edit the schedule using {'"'}Edit Periods{'"'} or by tapping subject/faculty fields.
+              Review the extracted text above. Times found: {extractTimesFromText(ocrText).length}. Edit the schedule using {'"'}Edit Periods{'"'} or by tapping subject/faculty fields on the main page.
             </Text>
           </ScrollView>
           <View style={styles.modalFooter}>
@@ -765,12 +698,7 @@ export default function App() {
           <TouchableOpacity
             style={[styles.bottomBtn, styles.saveBtn, saving && styles.saveBtnDisabled]}
             onPress={() => {
-              let periods = currentSchedule.periods;
-              if (inlineEdit) {
-                const updated = commitInlineEdit();
-                if (updated) periods = updated.periods;
-              }
-              scheduleAll(periods);
+              scheduleAll(currentSchedule.periods);
             }}
             disabled={saving}
             activeOpacity={0.7}
@@ -843,37 +771,46 @@ const styles = StyleSheet.create({
   },
   footer: { marginTop: 12, fontSize: 12, color: "#888", textAlign: "center" },
   ocrText: { fontSize: 12, color: "#333", lineHeight: 18 },
+  ocrLabel: { fontSize: 13, fontWeight: "bold", color: "#2196F3", marginBottom: 4 },
   ocrHint: { fontSize: 12, color: "#888", marginTop: 12, fontStyle: "italic" },
 
   // Bottom bar
   bottomBar: {
     flexDirection: "row",
-    padding: 10,
-    paddingBottom: Platform.OS === "ios" ? 24 : 10,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    paddingBottom: Platform.OS === "ios" ? 24 : 12,
     backgroundColor: "#fff",
     borderTopWidth: 1,
-    borderTopColor: "#eee",
-    elevation: 8,
+    borderTopColor: "#ddd",
+    elevation: 12,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    gap: 8,
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    gap: 6,
   },
   bottomBtnGroup: {
     flex: 1,
     alignItems: "center",
+    justifyContent: "center",
   },
   bottomBtn: {
     width: "100%",
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 44,
+    minHeight: 48,
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
   },
-  bottomBtnText: { color: "#fff", fontSize: 12, fontWeight: "600" },
-  btnHint: { fontSize: 9, color: "#888", marginTop: 2, textAlign: "center" },
+  bottomBtnText: { color: "#fff", fontSize: 13, fontWeight: "700", textAlign: "center" },
+  btnHint: { fontSize: 10, color: "#666", marginTop: 4, textAlign: "center", fontWeight: "500" },
 
   // Modal styles
   modalContainer: { flex: 1, backgroundColor: "#f5f5f5" },
