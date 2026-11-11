@@ -186,7 +186,7 @@ function extractTimesFromText(text) {
 
 function parseOCRText(text, blocks) {
   const times = extractTimesFromText(text);
-  const periods = [];
+  let periods = [];
 
   if (times.length >= 2) {
     for (let i = 0; i + 1 < times.length; i += 2) {
