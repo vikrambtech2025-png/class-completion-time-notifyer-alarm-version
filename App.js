@@ -232,25 +232,19 @@ async function preprocessImage(uri) {
     const height = info.height;
     console.log("[Preprocess] Original image dimensions:", width, "x", height);
 
-    // Crop outer margins (remove 5% from each edge)
-    const cropMargin = 0.05;
-    const cropX = Math.round(width * cropMargin);
-    const cropY = Math.round(height * cropMargin);
-    const cropW = Math.round(width * (1 - 2 * cropMargin));
-    const cropH = Math.round(height * (1 - 2 * cropMargin));
+    // Upscale aggressively - target at least 2000px on longest side
+    const maxDim = Math.max(width, height);
+    const scale = maxDim < 2000 ? Math.ceil(2000 / maxDim) : 1;
+    const targetWidth = Math.round(width * scale);
 
-    // Upscale if image is small (target min 1200px on longest side)
-    const maxDim = Math.max(cropW, cropH);
-    const scale = maxDim < 1200 ? 2 : 1;
-    const targetWidth = Math.round(cropW * scale);
+    console.log("[Preprocess] Scale factor:", scale, "target width:", targetWidth);
 
     const processed = await ImageManipulator.manipulateAsync(
       uri,
       [
-        { crop: { originX: cropX, originY: cropY, width: cropW, height: cropH } },
         { resize: { width: targetWidth } },
       ],
-      { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
+      { compress: 1.0, format: ImageManipulator.SaveFormat.JPEG }
     );
 
     console.log("[Preprocess] Preprocessed dimensions:", processed.width, "x", processed.height);
@@ -447,29 +441,45 @@ export default function App() {
       setUploadedImage(asset.uri);
 
       try {
-        // Preprocess image: crop margins, upscale for better OCR
-        console.log("[OCR] Original image URI:", asset.uri);
+        // Try OCR on original image first
+        console.log("[OCR] Trying original image...");
+        let bestText = "";
+        let bestResult = null;
+
+        try {
+          const origResult = await recognizeText(asset.uri);
+          const origText = origResult?.text || (Array.isArray(origResult?.blocks) ? origResult.blocks.map((b) => (typeof b.text === "string" ? b.text : "")).join("\n") : "") || "";
+          console.log("[OCR] Original image text length:", origText.length);
+          console.log("[OCR] Original image text:", origText.substring(0, 200));
+          if (origText.length > bestText.length) {
+            bestText = origText;
+            bestResult = origResult;
+          }
+        } catch (e1) {
+          console.warn("[OCR] Original image failed:", e1?.message);
+        }
+
+        // Try OCR on preprocessed image
+        console.log("[OCR] Preprocessing image...");
         const processedUri = await preprocessImage(asset.uri);
         console.log("[OCR] Processed URI:", processedUri);
-
-        // Run OCR on preprocessed image
-        console.log("[OCR] Starting OCR recognition...");
-        const ocrResult = await recognizeText(processedUri);
-        console.log("[OCR] Result type:", typeof ocrResult);
-        console.log("[OCR] Result keys:", ocrResult ? Object.keys(ocrResult) : "null");
-        console.log("[OCR] Full result:", JSON.stringify(ocrResult));
-
-        // Extract text from OCR result
-        let text = "";
-        if (ocrResult?.text && typeof ocrResult.text === "string" && ocrResult.text.trim().length > 0) {
-          text = ocrResult.text;
-          console.log("[OCR] Text from .text property, length:", text.length);
-        } else if (Array.isArray(ocrResult?.blocks) && ocrResult.blocks.length > 0) {
-          text = ocrResult.blocks.map((b) => (typeof b.text === "string" ? b.text : "")).join("\\n");
-          console.log("[OCR] Text from blocks, count:", ocrResult.blocks.length, "length:", text.length);
-        } else {
-          console.log("[OCR] No text found in result. Result was:", JSON.stringify(ocrResult));
+        try {
+          const procResult = await recognizeText(processedUri);
+          const procText = procResult?.text || (Array.isArray(procResult?.blocks) ? procResult.blocks.map((b) => (typeof b.text === "string" ? b.text : "")).join("\n") : "") || "";
+          console.log("[OCR] Preprocessed image text length:", procText.length);
+          console.log("[OCR] Preprocessed image text:", procText.substring(0, 200));
+          if (procText.length > bestText.length) {
+            bestText = procText;
+            bestResult = procResult;
+          }
+        } catch (e2) {
+          console.warn("[OCR] Preprocessed image failed:", e2?.message);
         }
+
+        const ocrResult = bestResult || {};
+        const text = bestText;
+        console.log("[OCR] Best text length:", text.length);
+        console.log("[OCR] Full result:", JSON.stringify(ocrResult).substring(0, 500));
 
         setOcrText(text || "No text detected by OCR.");
 
