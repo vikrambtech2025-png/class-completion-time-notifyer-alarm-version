@@ -159,6 +159,7 @@ function parseTimetableJSON(json) {
 
 function extractTimesFromText(text) {
   if (!text) return [];
+  console.log("[Extract] Input text:", text.substring(0, 200));
   const times = [];
   // Match HH:MM or H:MM or HH.MM or H.MM (colon or dot separator)
   const timePattern = /(\d{1,2})[:.](\d{2})/g;
@@ -185,7 +186,10 @@ function extractTimesFromText(text) {
 }
 
 function parseOCRText(text, blocks) {
+  console.log("[Parse] OCR text length:", text ? text.length : 0);
+  console.log("[Parse] Blocks count:", blocks ? blocks.length : 0);
   const times = extractTimesFromText(text);
+  console.log("[Parse] Extracted times:", JSON.stringify(times));
   let periods = [];
 
   if (times.length >= 2) {
@@ -226,7 +230,7 @@ async function preprocessImage(uri) {
 
     const width = info.width;
     const height = info.height;
-    console.log("Original image dimensions:", width, "x", height);
+    console.log("[Preprocess] Original image dimensions:", width, "x", height);
 
     // Crop outer margins (remove 5% from each edge)
     const cropMargin = 0.05;
@@ -249,10 +253,10 @@ async function preprocessImage(uri) {
       { compress: 0.95, format: ImageManipulator.SaveFormat.JPEG }
     );
 
-    console.log("Preprocessed dimensions:", processed.width, "x", processed.height);
+    console.log("[Preprocess] Preprocessed dimensions:", processed.width, "x", processed.height);
     return processed.uri;
   } catch (err) {
-    console.warn("Preprocessing failed, using original:", err);
+    console.warn("[Preprocess] Failed, using original:", err);
     return uri;
   }
 }
@@ -444,20 +448,27 @@ export default function App() {
 
       try {
         // Preprocess image: crop margins, upscale for better OCR
-        console.log("Original image URI:", asset.uri);
+        console.log("[OCR] Original image URI:", asset.uri);
         const processedUri = await preprocessImage(asset.uri);
+        console.log("[OCR] Processed URI:", processedUri);
 
         // Run OCR on preprocessed image
+        console.log("[OCR] Starting OCR recognition...");
         const ocrResult = await recognizeText(processedUri);
-        console.log("OCR Result:", JSON.stringify(ocrResult).substring(0, 500));
+        console.log("[OCR] Result type:", typeof ocrResult);
+        console.log("[OCR] Result keys:", ocrResult ? Object.keys(ocrResult) : "null");
+        console.log("[OCR] Full result:", JSON.stringify(ocrResult));
 
         // Extract text from OCR result
         let text = "";
-        if (ocrResult?.text && typeof ocrResult.text === "string") {
+        if (ocrResult?.text && typeof ocrResult.text === "string" && ocrResult.text.trim().length > 0) {
           text = ocrResult.text;
-        }
-        if (!text && Array.isArray(ocrResult?.blocks)) {
+          console.log("[OCR] Text from .text property, length:", text.length);
+        } else if (Array.isArray(ocrResult?.blocks) && ocrResult.blocks.length > 0) {
           text = ocrResult.blocks.map((b) => (typeof b.text === "string" ? b.text : "")).join("\\n");
+          console.log("[OCR] Text from blocks, count:", ocrResult.blocks.length, "length:", text.length);
+        } else {
+          console.log("[OCR] No text found in result. Result was:", JSON.stringify(ocrResult));
         }
 
         setOcrText(text || "No text detected by OCR.");
