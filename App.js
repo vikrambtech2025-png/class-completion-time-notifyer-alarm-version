@@ -799,7 +799,7 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
   },
   bottomBtnText: { color: "#fff", fontSize: 13, fontWeight: "700", textAlign: "center" },
-  btnHint: { fontSize: 10, color: "#666", marginTop: 4, textAlign: "center", fontWeight: "500" },
+  btnHint: { fontSize: 9, color: "#fff", marginTop: 2, textAlign: "center", fontWeight: "bold", opacity: 0.9 },
 
   // Modal styles
   modalContainer: { flex: 1, backgroundColor: "#f5f5f5" },
