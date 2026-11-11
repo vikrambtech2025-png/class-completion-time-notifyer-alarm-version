@@ -674,7 +674,7 @@ export default function App() {
       {/* Bottom Action Bar */}
       <View style={styles.bottomBar}>
         <TouchableOpacity
-          style={[styles.bottomBtn, styles.uploadBtn, uploading && styles.saveBtnDisabled]}
+          style={[styles.bottomBtn, uploading && styles.saveBtnDisabled]}
           onPress={handleUpload}
           activeOpacity={0.7}
           disabled={uploading}
@@ -683,7 +683,7 @@ export default function App() {
           <Text style={styles.btnHint}>Load JSON or photo</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.bottomBtn, styles.rescheduleBtn]}
+          style={styles.bottomBtn}
           onPress={openEditor}
           activeOpacity={0.7}
         >
@@ -691,7 +691,7 @@ export default function App() {
           <Text style={styles.btnHint}>Change times & names</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.bottomBtn, styles.saveBtn, saving && styles.saveBtnDisabled]}
+          style={[styles.bottomBtn, saving && styles.saveBtnDisabled]}
           onPress={() => {
             scheduleAll(currentSchedule.periods);
           }}
@@ -792,6 +792,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     minHeight: 48,
+    backgroundColor: "#000000",
     elevation: 3,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
