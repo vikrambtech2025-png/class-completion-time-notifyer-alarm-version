@@ -292,8 +292,6 @@ function TimePicker({ time24, onChange }) {
 
   const hours = Array.from({ length: 12 }, (_, i) => i + 1);
   const minutes = Array.from({ length: 60 }, (_, i) => i);
-  const periods = ["AM", "PM"];
-
   const handleChange = (h, m, per) => {
     const t = to24h(h, m, per);
     onChange(t);
@@ -303,24 +301,19 @@ function TimePicker({ time24, onChange }) {
     const y = event.nativeEvent.contentOffset.y;
     const index = Math.round(y / ITEM_HEIGHT);
     if (type === "hour") {
-      const val = hours[Math.max(0, Math.min(index, hours.length - 1))] || hour;
+      const val = hours[Math.max(0, Math.min(index, hours.length - 1))];
       setHour(val);
       handleChange(val, minute, period);
     } else if (type === "minute") {
-      const val = minutes[Math.max(0, Math.min(index, minutes.length - 1))] || minute;
+      const val = minutes[Math.max(0, Math.min(index, minutes.length - 1))];
       setMinute(val);
       handleChange(hour, val, period);
-    } else if (type === "period") {
-      const val = periods[Math.max(0, Math.min(index, periods.length - 1))] || period;
-      setPeriod(val);
-      handleChange(hour, minute, val);
     }
   };
 
-  const getInitialScroll = (type) => {
-    if (type === "hour") return (hour - 1) * ITEM_HEIGHT;
-    if (type === "minute") return minute * ITEM_HEIGHT;
-    if (type === "period") return (period === "PM" ? 1 : 0) * ITEM_HEIGHT;
+  const getInitialScroll = (type, value) => {
+    if (type === "hour") return (value - 1) * ITEM_HEIGHT;
+    if (type === "minute") return value * ITEM_HEIGHT;
     return 0;
   };
 
@@ -332,7 +325,7 @@ function TimePicker({ time24, onChange }) {
       snapToInterval={ITEM_HEIGHT}
       decelerationRate="fast"
       onMomentumScrollEnd={(e) => handleScroll(type, e)}
-      contentOffset={{ x: 0, y: getInitialScroll(type) }}
+      contentOffset={{ x: 0, y: getInitialScroll(type, selectedValue) }}
     >
       {data.map((item) => (
         <View
@@ -363,7 +356,29 @@ function TimePicker({ time24, onChange }) {
         {renderColumn(hours, hour, "hour", 50)}
         <Text style={timePickerStyles.separator}>:</Text>
         {renderColumn(minutes, minute, "minute", 50)}
-        {renderColumn(periods, period, "period", 60)}
+      </View>
+      {/* AM/PM Radio Buttons */}
+      <View style={timePickerStyles.radioRow}>
+        <TouchableOpacity
+          style={timePickerStyles.radioBtn}
+          onPress={() => { setPeriod("AM"); handleChange(hour, minute, "AM"); }}
+          activeOpacity={0.7}
+        >
+          <View style={[timePickerStyles.radioCircle, period === "AM" && timePickerStyles.radioCircleActive]}>
+            {period === "AM" && <View style={timePickerStyles.radioDot} />}
+          </View>
+          <Text style={[timePickerStyles.radioLabel, period === "AM" && timePickerStyles.radioLabelActive]}>AM</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={timePickerStyles.radioBtn}
+          onPress={() => { setPeriod("PM"); handleChange(hour, minute, "PM"); }}
+          activeOpacity={0.7}
+        >
+          <View style={[timePickerStyles.radioCircle, period === "PM" && timePickerStyles.radioCircleActive]}>
+            {period === "PM" && <View style={timePickerStyles.radioDot} />}
+          </View>
+          <Text style={[timePickerStyles.radioLabel, period === "PM" && timePickerStyles.radioLabelActive]}>PM</Text>
+        </TouchableOpacity>
       </View>
       <Text style={timePickerStyles.preview}>{formatTime12h(to24h(hour, minute, period))}</Text>
     </View>
@@ -385,6 +400,50 @@ const timePickerStyles = StyleSheet.create({
   },
   separator: { fontSize: 20, fontWeight: "bold", color: "#333", paddingHorizontal: 4 },
   preview: { fontSize: 12, color: "#2196F3", fontWeight: "600", textAlign: "center", marginTop: 4 },
+  radioRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 8,
+    gap: 20,
+  },
+  radioBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 6,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    backgroundColor: "#fafafa",
+  },
+  radioCircle: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: "#999",
+    marginRight: 6,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  radioCircleActive: {
+    borderColor: "#2196F3",
+  },
+  radioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: "#2196F3",
+  },
+  radioLabel: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#666",
+  },
+  radioLabelActive: {
+    color: "#2196F3",
+  },
 });
 
 export default function App() {
