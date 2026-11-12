@@ -279,13 +279,14 @@ async function preprocessImage(uri) {
 const STORAGE_KEY = "@period_timer_schedule";
 
 // Scrollable Time Picker with AM/PM (custom, no native dependency)
+// Scrollable Time Picker with AM/PM
 function TimePicker({ time24, onChange }) {
   const parsed = to12h(time24);
   const [hour, setHour] = useState(parsed.hour);
   const [minute, setMinute] = useState(parsed.minute);
   const [period, setPeriod] = useState(parsed.period);
 
-  const ITEM_HEIGHT = 40;
+  const ITEM_HEIGHT = 44;
   const VISIBLE_ITEMS = 3;
   const PICKER_HEIGHT = ITEM_HEIGHT * VISIBLE_ITEMS;
 
@@ -302,28 +303,36 @@ function TimePicker({ time24, onChange }) {
     const y = event.nativeEvent.contentOffset.y;
     const index = Math.round(y / ITEM_HEIGHT);
     if (type === "hour") {
-      const val = hours[index] || hour;
+      const val = hours[Math.max(0, Math.min(index, hours.length - 1))] || hour;
       setHour(val);
       handleChange(val, minute, period);
     } else if (type === "minute") {
-      const val = minutes[index] || minute;
+      const val = minutes[Math.max(0, Math.min(index, minutes.length - 1))] || minute;
       setMinute(val);
       handleChange(hour, val, period);
     } else if (type === "period") {
-      const val = periods[index] || period;
+      const val = periods[Math.max(0, Math.min(index, periods.length - 1))] || period;
       setPeriod(val);
       handleChange(hour, minute, val);
     }
   };
 
-  const renderColumn = (data, selectedValue, type) => (
+  const getInitialScroll = (type) => {
+    if (type === "hour") return (hour - 1) * ITEM_HEIGHT;
+    if (type === "minute") return minute * ITEM_HEIGHT;
+    if (type === "period") return (period === "PM" ? 1 : 0) * ITEM_HEIGHT;
+    return 0;
+  };
+
+  const renderColumn = (data, selectedValue, type, width) => (
     <ScrollView
-      style={{ height: PICKER_HEIGHT, width: type === "period" ? 60 : 50 }}
+      style={{ height: PICKER_HEIGHT, width }}
       contentContainerStyle={{ paddingVertical: ITEM_HEIGHT }}
       showsVerticalScrollIndicator={false}
       snapToInterval={ITEM_HEIGHT}
       decelerationRate="fast"
       onMomentumScrollEnd={(e) => handleScroll(type, e)}
+      contentOffset={{ x: 0, y: getInitialScroll(type) }}
     >
       {data.map((item) => (
         <View
@@ -336,7 +345,7 @@ function TimePicker({ time24, onChange }) {
         >
           <Text
             style={{
-              fontSize: 16,
+              fontSize: 18,
               fontWeight: item === selectedValue ? "bold" : "normal",
               color: item === selectedValue ? "#2196F3" : "#999",
             }}
@@ -351,10 +360,10 @@ function TimePicker({ time24, onChange }) {
   return (
     <View style={timePickerStyles.container}>
       <View style={timePickerStyles.pickerRow}>
-        {renderColumn(hours, hour, "hour")}
+        {renderColumn(hours, hour, "hour", 50)}
         <Text style={timePickerStyles.separator}>:</Text>
-        {renderColumn(minutes, minute, "minute")}
-        {renderColumn(periods, period, "period")}
+        {renderColumn(minutes, minute, "minute", 50)}
+        {renderColumn(periods, period, "period", 60)}
       </View>
       <Text style={timePickerStyles.preview}>{formatTime12h(to24h(hour, minute, period))}</Text>
     </View>
