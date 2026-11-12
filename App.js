@@ -659,6 +659,33 @@ export default function App() {
           </View>
         )}
 
+        {/* Timetable Display */}
+        {DAYS.map((day) => (
+          <View key={day} style={styles.dayCard}>
+            <Text style={styles.dayTitle}>{day}</Text>
+            {currentSchedule.periods.map((p, pIdx) => {
+              const entry = currentSchedule.timetable[day]?.[pIdx] || { subject: "", faculty: "" };
+              return (
+                <View key={`${day}-${p.period}`} style={styles.periodRow}>
+                  <View style={styles.periodInfo}>
+                    <Text style={styles.periodNum}>{p.period}</Text>
+                    <Text style={styles.periodName}>{p.name || `P${p.period}`}</Text>
+                    <Text style={styles.periodTime}>{formatTimeRange(p.time)}</Text>
+                  </View>
+                  <View style={styles.periodDetails}>
+                    <Text style={[styles.detailText, !entry.subject && styles.placeholderText]}>
+                      {entry.subject || "No subject"}
+                    </Text>
+                    <Text style={[styles.detailText, !entry.faculty && styles.placeholderText, styles.facultyText]}>
+                      {entry.faculty || "No faculty"}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        ))}
+
         <Text style={styles.footer}>Scheduled: {scheduled.length} alarms</Text>
       </ScrollView>
 
@@ -825,6 +852,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   day: { marginBottom: 10, padding: 8, backgroundColor: "#f2f2f2", borderRadius: 8 },
+  dayCard: { marginBottom: 10, padding: 8, backgroundColor: "#f2f2f2", borderRadius: 8 },
+  periodDetails: { flex: 1, marginLeft: 8 },
+  detailText: { fontSize: 13, color: "#333" },
+  facultyText: { fontSize: 12, color: "#666" },
   dayTitle: { fontSize: 15, fontWeight: "bold", marginBottom: 6, color: "#2196F3" },
   periodRow: {
     flexDirection: "row",
