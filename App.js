@@ -270,6 +270,7 @@ export default function App() {
   const [ocrText, setOcrText] = useState("");
   const [showOCRModal, setShowOCRModal] = useState(false);
   const [uploadedImage, setUploadedImage] = useState(null);
+  const [selectedDay, setSelectedDay] = useState("Monday");
 
   const screenData = Dimensions.get("window");
   const isSmallScreen = screenData.width < 360;
@@ -659,32 +660,48 @@ export default function App() {
           </View>
         )}
 
-        {/* Timetable Display */}
-        {DAYS.map((day) => (
-          <View key={day} style={styles.dayCard}>
-            <Text style={styles.dayTitle}>{day}</Text>
-            {currentSchedule.periods.map((p, pIdx) => {
-              const entry = currentSchedule.timetable[day]?.[pIdx] || { subject: "", faculty: "" };
-              return (
-                <View key={`${day}-${p.period}`} style={styles.periodRow}>
-                  <View style={styles.periodInfo}>
-                    <Text style={styles.periodNum}>{p.period}</Text>
-                    <Text style={styles.periodName}>{p.name || `P${p.period}`}</Text>
-                    <Text style={styles.periodTime}>{formatTimeRange(p.time)}</Text>
-                  </View>
-                  <View style={styles.periodDetails}>
-                    <Text style={[styles.detailText, !entry.subject && styles.placeholderText]}>
-                      {entry.subject || "No subject"}
-                    </Text>
-                    <Text style={[styles.detailText, !entry.faculty && styles.placeholderText, styles.facultyText]}>
-                      {entry.faculty || "No faculty"}
-                    </Text>
-                  </View>
+        {/* Day Selector */}
+        <View style={styles.daySelectorRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.daySelectorScroll}>
+            {DAYS.map((day) => (
+              <TouchableOpacity
+                key={day}
+                style={[styles.daySelectorBtn, selectedDay === day && styles.daySelectorBtnActive]}
+                onPress={() => setSelectedDay(day)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.daySelectorText, selectedDay === day && styles.daySelectorTextActive]}>
+                  {day.substring(0, 3)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Timetable Display - Selected Day Only */}
+        <View style={styles.dayCard}>
+          <Text style={styles.dayTitle}>{selectedDay}</Text>
+          {currentSchedule.periods.map((p, pIdx) => {
+            const entry = currentSchedule.timetable[selectedDay]?.[pIdx] || { subject: "", faculty: "" };
+            return (
+              <View key={`${selectedDay}-${p.period}`} style={styles.periodRow}>
+                <View style={styles.periodInfo}>
+                  <Text style={styles.periodNum}>{p.period}</Text>
+                  <Text style={styles.periodName}>{p.name || `P${p.period}`}</Text>
+                  <Text style={styles.periodTime}>{formatTimeRange(p.time)}</Text>
                 </View>
-              );
-            })}
-          </View>
-        ))}
+                <View style={styles.periodDetails}>
+                  <Text style={[styles.detailText, !entry.subject && styles.placeholderText]}>
+                    {entry.subject || "No subject"}
+                  </Text>
+                  <Text style={[styles.detailText, !entry.faculty && styles.placeholderText, styles.facultyText]}>
+                    {entry.faculty || "No faculty"}
+                  </Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
 
         <Text style={styles.footer}>Scheduled: {scheduled.length} alarms</Text>
       </ScrollView>
@@ -853,6 +870,21 @@ const styles = StyleSheet.create({
   },
   day: { marginBottom: 10, padding: 8, backgroundColor: "#f2f2f2", borderRadius: 8 },
   dayCard: { marginBottom: 10, padding: 8, backgroundColor: "#f2f2f2", borderRadius: 8 },
+  daySelectorRow: { marginBottom: 10 },
+  daySelectorScroll: { flexGrow: 0 },
+  daySelectorBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: "#eee",
+    marginRight: 6,
+    minHeight: 36,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  daySelectorBtnActive: { backgroundColor: "#2196F3" },
+  daySelectorText: { fontSize: 13, color: "#333", fontWeight: "600" },
+  daySelectorTextActive: { color: "#fff" },
   periodDetails: { flex: 1, marginLeft: 8 },
   detailText: { fontSize: 13, color: "#333" },
   facultyText: { fontSize: 12, color: "#666" },
