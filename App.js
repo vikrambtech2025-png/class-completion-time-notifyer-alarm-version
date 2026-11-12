@@ -282,86 +282,49 @@ const STORAGE_KEY = "@period_timer_schedule";
 // Scrollable Time Picker with AM/PM
 function TimePicker({ time24, onChange }) {
   const parsed = to12h(time24);
-  const [hour, setHour] = useState(parsed.hour);
-  const [minute, setMinute] = useState(parsed.minute);
+  const [hour, setHour] = useState(String(parsed.hour));
+  const [minute, setMinute] = useState(String(parsed.minute).padStart(2, '0'));
   const [period, setPeriod] = useState(parsed.period);
 
-  const ITEM_HEIGHT = 44;
-  const VISIBLE_ITEMS = 3;
-  const PICKER_HEIGHT = ITEM_HEIGHT * VISIBLE_ITEMS;
-
-  const hours = Array.from({ length: 12 }, (_, i) => i + 1);
-  const minutes = Array.from({ length: 60 }, (_, i) => i);
-  const handleChange = (h, m, per) => {
-    const t = to24h(h, m, per);
+  const handleChange = () => {
+    const h = parseInt(hour, 10) || 12;
+    const m = parseInt(minute, 10) || 0;
+    const clampedH = Math.max(1, Math.min(12, h));
+    const clampedM = Math.max(0, Math.min(59, m));
+    const t = to24h(clampedH, clampedM, period);
     onChange(t);
   };
 
-  const handleScroll = (type, event) => {
-    const y = event.nativeEvent.contentOffset.y;
-    const index = Math.round(y / ITEM_HEIGHT);
-    if (type === "hour") {
-      const val = hours[Math.max(0, Math.min(index, hours.length - 1))];
-      setHour(val);
-      handleChange(val, minute, period);
-    } else if (type === "minute") {
-      const val = minutes[Math.max(0, Math.min(index, minutes.length - 1))];
-      setMinute(val);
-      handleChange(hour, val, period);
-    }
-  };
-
-  const getInitialScroll = (type, value) => {
-    if (type === "hour") return (value - 1) * ITEM_HEIGHT;
-    if (type === "minute") return value * ITEM_HEIGHT;
-    return 0;
-  };
-
-  const renderColumn = (data, selectedValue, type, width) => (
-    <ScrollView
-      style={{ height: PICKER_HEIGHT, width }}
-      contentContainerStyle={{ paddingVertical: ITEM_HEIGHT }}
-      showsVerticalScrollIndicator={false}
-      snapToInterval={ITEM_HEIGHT}
-      decelerationRate="fast"
-      onMomentumScrollEnd={(e) => handleScroll(type, e)}
-      contentOffset={{ x: 0, y: getInitialScroll(type, selectedValue) }}
-    >
-      {data.map((item) => (
-        <View
-          key={item}
-          style={{
-            height: ITEM_HEIGHT,
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 18,
-              fontWeight: item === selectedValue ? "bold" : "normal",
-              color: item === selectedValue ? "#2196F3" : "#999",
-            }}
-          >
-            {typeof item === "number" ? String(item).padStart(2, "0") : item}
-          </Text>
-        </View>
-      ))}
-    </ScrollView>
-  );
-
   return (
     <View style={timePickerStyles.container}>
-      <View style={timePickerStyles.pickerRow}>
-        {renderColumn(hours, hour, "hour", 50)}
+      <View style={timePickerStyles.inputRow}>
+        <TextInput
+          style={timePickerStyles.timeInput}
+          value={hour}
+          onChangeText={(v) => setHour(v)}
+          onBlur={handleChange}
+          placeholder="12"
+          placeholderTextColor="#999"
+          keyboardType="number-pad"
+          maxLength={2}
+        />
         <Text style={timePickerStyles.separator}>:</Text>
-        {renderColumn(minutes, minute, "minute", 50)}
+        <TextInput
+          style={timePickerStyles.timeInput}
+          value={minute}
+          onChangeText={(v) => setMinute(v)}
+          onBlur={handleChange}
+          placeholder="00"
+          placeholderTextColor="#999"
+          keyboardType="number-pad"
+          maxLength={2}
+        />
       </View>
       {/* AM/PM Radio Buttons */}
       <View style={timePickerStyles.radioRow}>
         <TouchableOpacity
           style={timePickerStyles.radioBtn}
-          onPress={() => { setPeriod("AM"); handleChange(hour, minute, "AM"); }}
+          onPress={() => { setPeriod("AM"); handleChange(); }}
           activeOpacity={0.7}
         >
           <View style={[timePickerStyles.radioCircle, period === "AM" && timePickerStyles.radioCircleActive]}>
@@ -371,7 +334,7 @@ function TimePicker({ time24, onChange }) {
         </TouchableOpacity>
         <TouchableOpacity
           style={timePickerStyles.radioBtn}
-          onPress={() => { setPeriod("PM"); handleChange(hour, minute, "PM"); }}
+          onPress={() => { setPeriod("PM"); handleChange(); }}
           activeOpacity={0.7}
         >
           <View style={[timePickerStyles.radioCircle, period === "PM" && timePickerStyles.radioCircleActive]}>
@@ -380,14 +343,14 @@ function TimePicker({ time24, onChange }) {
           <Text style={[timePickerStyles.radioLabel, period === "PM" && timePickerStyles.radioLabelActive]}>PM</Text>
         </TouchableOpacity>
       </View>
-      <Text style={timePickerStyles.preview}>{formatTime12h(to24h(hour, minute, period))}</Text>
+      <Text style={timePickerStyles.preview}>{formatTime12h(to24h(parseInt(hour, 10) || 12, parseInt(minute, 10) || 0, period))}</Text>
     </View>
   );
 }
 
 const timePickerStyles = StyleSheet.create({
   container: { marginBottom: 8 },
-  pickerRow: {
+  inputRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -395,10 +358,22 @@ const timePickerStyles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: "#ddd",
-    overflow: "hidden",
     paddingVertical: 4,
+    paddingHorizontal: 8,
   },
-  separator: { fontSize: 20, fontWeight: "bold", color: "#333", paddingHorizontal: 4 },
+  timeInput: {
+    width: 50,
+    height: 44,
+    textAlign: "center",
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "#2196F3",
+    backgroundColor: "#fff",
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#ddd",
+  },
+  separator: { fontSize: 24, fontWeight: "bold", color: "#333", paddingHorizontal: 8 },
   preview: { fontSize: 12, color: "#2196F3", fontWeight: "600", textAlign: "center", marginTop: 4 },
   radioRow: {
     flexDirection: "row",
