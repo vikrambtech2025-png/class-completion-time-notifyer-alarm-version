@@ -13,6 +13,7 @@ import {
   SafeAreaView,
   Image,
 } from "react-native";
+// Custom scrollable time picker (no native picker dependency)
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import * as DocumentPicker from "expo-document-picker";
@@ -62,6 +63,26 @@ function formatTimeRange(timeStr) {
   const [start, end] = timeStr.split("-");
   if (!validateTime(start) || !validateTime(end)) return timeStr;
   return `${formatTime12h(start)} - ${formatTime12h(end)}`;
+}
+
+// Convert 24h time (HH:MM) to 12h components {hour, minute, period}
+function to12h(time24) {
+  if (!validateTime(time24)) return { hour: 12, minute: 0, period: "AM" };
+  const [h, m] = time24.split(":").map(Number);
+  const period = h >= 12 ? "PM" : "AM";
+  const hour = h % 12 || 12;
+  return { hour, minute: m, period };
+}
+
+// Convert 12h components to 24h time (HH:MM)
+function to24h(hour, minute, period) {
+  let h = hour;
+  if (period === "AM") {
+    h = hour === 12 ? 0 : hour;
+  } else {
+    h = hour === 12 ? 12 : hour + 12;
+  }
+  return `${String(h).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
 const DEFAULT_PERIODS = [
@@ -256,6 +277,106 @@ async function preprocessImage(uri) {
 }
 
 const STORAGE_KEY = "@period_timer_schedule";
+
+// Scrollable Time Picker with AM/PM (custom, no native dependency)
+function TimePicker({ time24, onChange }) {
+  const parsed = to12h(time24);
+  const [hour, setHour] = useState(parsed.hour);
+  const [minute, setMinute] = useState(parsed.minute);
+  const [period, setPeriod] = useState(parsed.period);
+
+  const ITEM_HEIGHT = 40;
+  const VISIBLE_ITEMS = 3;
+  const PICKER_HEIGHT = ITEM_HEIGHT * VISIBLE_ITEMS;
+
+  const hours = Array.from({ length: 12 }, (_, i) => i + 1);
+  const minutes = Array.from({ length: 60 }, (_, i) => i);
+  const periods = ["AM", "PM"];
+
+  const handleChange = (h, m, per) => {
+    const t = to24h(h, m, per);
+    onChange(t);
+  };
+
+  const handleScroll = (type, event) => {
+    const y = event.nativeEvent.contentOffset.y;
+    const index = Math.round(y / ITEM_HEIGHT);
+    if (type === "hour") {
+      const val = hours[index] || hour;
+      setHour(val);
+      handleChange(val, minute, period);
+    } else if (type === "minute") {
+      const val = minutes[index] || minute;
+      setMinute(val);
+      handleChange(hour, val, period);
+    } else if (type === "period") {
+      const val = periods[index] || period;
+      setPeriod(val);
+      handleChange(hour, minute, val);
+    }
+  };
+
+  const renderColumn = (data, selectedValue, type) => (
+    <ScrollView
+      style={{ height: PICKER_HEIGHT, width: type === "period" ? 60 : 50 }}
+      contentContainerStyle={{ paddingVertical: ITEM_HEIGHT }}
+      showsVerticalScrollIndicator={false}
+      snapToInterval={ITEM_HEIGHT}
+      decelerationRate="fast"
+      onMomentumScrollEnd={(e) => handleScroll(type, e)}
+    >
+      {data.map((item) => (
+        <View
+          key={item}
+          style={{
+            height: ITEM_HEIGHT,
+            justifyContent: "center",
+            alignItems: "center",
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 16,
+              fontWeight: item === selectedValue ? "bold" : "normal",
+              color: item === selectedValue ? "#2196F3" : "#999",
+            }}
+          >
+            {typeof item === "number" ? String(item).padStart(2, "0") : item}
+          </Text>
+        </View>
+      ))}
+    </ScrollView>
+  );
+
+  return (
+    <View style={timePickerStyles.container}>
+      <View style={timePickerStyles.pickerRow}>
+        {renderColumn(hours, hour, "hour")}
+        <Text style={timePickerStyles.separator}>:</Text>
+        {renderColumn(minutes, minute, "minute")}
+        {renderColumn(periods, period, "period")}
+      </View>
+      <Text style={timePickerStyles.preview}>{formatTime12h(to24h(hour, minute, period))}</Text>
+    </View>
+  );
+}
+
+const timePickerStyles = StyleSheet.create({
+  container: { marginBottom: 8 },
+  pickerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#fafafa",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    overflow: "hidden",
+    paddingVertical: 4,
+  },
+  separator: { fontSize: 20, fontWeight: "bold", color: "#333", paddingHorizontal: 4 },
+  preview: { fontSize: 12, color: "#2196F3", fontWeight: "600", textAlign: "center", marginTop: 4 },
+});
 
 export default function App() {
   const [status, setStatus] = useState("Initializing...");
@@ -761,34 +882,22 @@ export default function App() {
                   placeholderTextColor="#999"
                 />
 
-                <Text style={styles.fieldLabel}>Time (HH:MM-HH:MM)</Text>
-                <View style={styles.timeRow}>
-                  <TextInput
-                    style={[styles.input, styles.timeInput]}
-                    value={(p.time || "").split("-")[0] || ""}
-                    onChangeText={(v) => {
-                      const end = (p.time || "").split("-")[1] || "";
-                      updateEditPeriod(index, "time", `${v}-${end}`);
-                    }}
-                    placeholder="09:00"
-                    placeholderTextColor="#999"
-                    keyboardType="numbers-and-punctuation"
-                    maxLength={5}
-                  />
-                  <Text style={styles.timeSeparator}>to</Text>
-                  <TextInput
-                    style={[styles.input, styles.timeInput]}
-                    value={(p.time || "").split("-")[1] || ""}
-                    onChangeText={(v) => {
-                      const start = (p.time || "").split("-")[0] || "";
-                      updateEditPeriod(index, "time", `${start}-${v}`);
-                    }}
-                    placeholder="09:45"
-                    placeholderTextColor="#999"
-                    keyboardType="numbers-and-punctuation"
-                    maxLength={5}
-                  />
-                </View>
+                <Text style={styles.fieldLabel}>Start Time</Text>
+                <TimePicker
+                  time24={(p.time || "09:00-09:45").split("-")[0]}
+                  onChange={(t) => {
+                    const end = (p.time || "").split("-")[1] || "09:45";
+                    updateEditPeriod(index, "time", `${t}-${end}`);
+                  }}
+                />
+                <Text style={styles.fieldLabel}>End Time</Text>
+                <TimePicker
+                  time24={(p.time || "09:00-09:45").split("-")[1] || "09:45"}
+                  onChange={(t) => {
+                    const start = (p.time || "").split("-")[0] || "09:00";
+                    updateEditPeriod(index, "time", `${start}-${t}`);
+                  }}
+                />
                 <Text style={styles.timePreview}>{formatTimeRange(p.time)}</Text>
               </View>
             ))}
