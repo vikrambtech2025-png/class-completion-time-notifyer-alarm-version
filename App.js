@@ -428,6 +428,7 @@ export default function App() {
   const [showEditor, setShowEditor] = useState(false);
   const [editPeriods, setEditPeriods] = useState([]);
   const [editTimetable, setEditTimetable] = useState({});
+  const [editingDay, setEditingDay] = useState("Monday");
   const [saving, setSaving] = useState(false);
   // (inline editing removed - main page cleared)
   const [uploading, setUploading] = useState(false);
@@ -723,6 +724,7 @@ export default function App() {
   function openEditor() {
     setEditPeriods(currentSchedule.periods.map((p) => ({ ...p })));
     setEditTimetable(JSON.parse(JSON.stringify(currentSchedule.timetable)));
+    setEditingDay("Monday");
     setShowEditor(true);
   }
 
@@ -904,15 +906,35 @@ export default function App() {
             </TouchableOpacity>
           </View>
 
+          {/* Day Selector Tabs */}
+          <View style={styles.modalDayRow}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              {DAYS.map((day) => (
+                <TouchableOpacity
+                  key={day}
+                  style={[styles.modalDayBtn, editingDay === day && styles.modalDayBtnActive]}
+                  onPress={() => setEditingDay(day)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.modalDayText, editingDay === day && styles.modalDayTextActive]}>
+                    {day.substring(0, 3)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+
           <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent}>
-            {editPeriods.map((p, index) => (
+            {editPeriods.map((p, index) => {
+              const entry = editTimetable[editingDay]?.[index] || { subject: "", faculty: "" };
+              return (
               <View key={index} style={styles.periodCard}>
                 <View style={styles.periodCardHeader}>
                   <View style={styles.periodBadge}>
                     <Text style={styles.periodBadgeText}>P{index + 1}</Text>
                   </View>
                   <TouchableOpacity onPress={() => removePeriod(index)} style={styles.deleteBtn} activeOpacity={0.7}>
-                    <Text style={styles.deleteBtnText}>🗑</Text>
+                    <Text style={styles.deleteBtnText}>Del</Text>
                   </TouchableOpacity>
                 </View>
 
@@ -942,8 +964,43 @@ export default function App() {
                   }}
                 />
                 <Text style={styles.timePreview}>{formatTimeRange(p.time)}</Text>
+
+                <Text style={styles.fieldLabel}>Subject ({editingDay})</Text>
+                <TextInput
+                  style={styles.input}
+                  value={entry.subject || ""}
+                  onChangeText={(v) => {
+                    setEditTimetable((prev) => {
+                      const next = { ...prev };
+                      if (!next[editingDay]) next[editingDay] = [];
+                      if (!next[editingDay][index]) next[editingDay][index] = { period: index + 1, subject: "", faculty: "" };
+                      next[editingDay][index] = { ...next[editingDay][index], subject: v };
+                      return next;
+                    });
+                  }}
+                  placeholder="e.g., Mathematics"
+                  placeholderTextColor="#999"
+                />
+
+                <Text style={styles.fieldLabel}>Faculty ({editingDay})</Text>
+                <TextInput
+                  style={styles.input}
+                  value={entry.faculty || ""}
+                  onChangeText={(v) => {
+                    setEditTimetable((prev) => {
+                      const next = { ...prev };
+                      if (!next[editingDay]) next[editingDay] = [];
+                      if (!next[editingDay][index]) next[editingDay][index] = { period: index + 1, subject: "", faculty: "" };
+                      next[editingDay][index] = { ...next[editingDay][index], faculty: v };
+                      return next;
+                    });
+                  }}
+                  placeholder="e.g., Dr. Smith"
+                  placeholderTextColor="#999"
+                />
               </View>
-            ))}
+            );
+            })}
 
             <TouchableOpacity style={styles.addBtn} onPress={addPeriod} activeOpacity={0.7}>
               <Text style={styles.addBtnText}>+ Add Period</Text>
@@ -1223,6 +1280,26 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
   },
+  modalDayRow: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#fff",
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
+  },
+  modalDayBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "#eee",
+    marginRight: 6,
+    minHeight: 32,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalDayBtnActive: { backgroundColor: "#2196F3" },
+  modalDayText: { fontSize: 12, color: "#333", fontWeight: "600" },
+  modalDayTextActive: { color: "#fff" },
   cancelBtn: {
     backgroundColor: "#999",
     paddingVertical: 12,
