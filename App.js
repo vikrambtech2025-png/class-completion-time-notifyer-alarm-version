@@ -11,15 +11,10 @@ import {
   Alert,
   Dimensions,
   SafeAreaView,
-  Image,
 } from "react-native";
 // Custom scrollable time picker (no native picker dependency)
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
-import * as DocumentPicker from "expo-document-picker";
-import * as ImagePicker from "expo-image-picker";
-import * as ImageManipulator from "expo-image-manipulator";
-import { recognizeText } from "expo-ocr-kit";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 Notifications.setNotificationHandler({
@@ -106,174 +101,6 @@ function createBlankSchedule() {
     }));
   });
   return { periods, timetable };
-}
-
-function parseTimetableJSON(json) {
-  let data;
-  try {
-    data = typeof json === "string" ? JSON.parse(json) : json;
-  } catch (_e) {
-    throw new Error("Invalid JSON file");
-  }
-
-  let periods = [];
-  if (Array.isArray(data.periods)) {
-    periods = data.periods.map((p, i) => ({
-      period: p.period || i + 1,
-      time: p.time || "09:00-09:45",
-      name: p.name || `Period ${p.period || i + 1}`,
-    }));
-  } else if (Array.isArray(data.defaultPeriods)) {
-    periods = data.defaultPeriods.map((p, i) => ({
-      period: p.period || i + 1,
-      time: p.time || "09:00-09:45",
-      name: p.name || `Period ${p.period || i + 1}`,
-    }));
-  } else {
-    periods = DEFAULT_PERIODS.map((p) => ({ ...p }));
-  }
-
-  if (periods.length === 0) {
-    periods = DEFAULT_PERIODS.map((p) => ({ ...p }));
-  }
-
-  const timetable = {};
-  const sourceTimetable = data.timetable || {};
-
-  DAYS.forEach((day) => {
-    const dayEntries = sourceTimetable[day] || sourceTimetable[day.toLowerCase()] || [];
-    const entries = [];
-
-    if (Array.isArray(dayEntries)) {
-      dayEntries.forEach((entry) => {
-        if (entry.periods && Array.isArray(entry.periods)) {
-          entry.periods.forEach((pNum) => {
-            entries.push({
-              period: pNum,
-              subject: entry.subject || "",
-              faculty: Array.isArray(entry.faculty) ? entry.faculty.join(", ") : (entry.faculty || ""),
-            });
-          });
-        } else if (entry.period) {
-          entries.push({
-            period: entry.period,
-            subject: entry.subject || "",
-            faculty: Array.isArray(entry.faculty) ? entry.faculty.join(", ") : (entry.faculty || ""),
-          });
-        }
-      });
-    }
-
-    const periodNums = periods.map((p) => p.period);
-    periodNums.forEach((pNum) => {
-      if (!entries.find((e) => e.period === pNum)) {
-        entries.push({ period: pNum, subject: "", faculty: "" });
-      }
-    });
-
-    entries.sort((a, b) => a.period - b.period);
-    timetable[day] = entries;
-  });
-
-  return { periods, timetable };
-}
-
-function extractTimesFromText(text) {
-  if (!text) return [];
-  console.log("[Extract] Input text:", text.substring(0, 200));
-  const times = [];
-  // Match HH:MM or H:MM or HH.MM or H.MM (colon or dot separator)
-  const timePattern = /(\d{1,2})[:.](\d{2})/g;
-  let match;
-  while ((match = timePattern.exec(text)) !== null) {
-    const h = parseInt(match[1], 10);
-    const m = parseInt(match[2], 10);
-    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
-      times.push(`${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`);
-    }
-  }
-  // Also try to match 4-digit times like "0900" or "09 00"
-  const timePattern2 = /(\d{2})\s+(\d{2})/g;
-  let match2;
-  while ((match2 = timePattern2.exec(text)) !== null) {
-    const h = parseInt(match2[1], 10);
-    const m = parseInt(match2[2], 10);
-    if (h >= 0 && h <= 23 && m >= 0 && m <= 59) {
-      const t = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-      if (!times.includes(t)) times.push(t);
-    }
-  }
-  return times;
-}
-
-function parseOCRText(text, blocks) {
-  console.log("[Parse] OCR text length:", text ? text.length : 0);
-  console.log("[Parse] Blocks count:", blocks ? blocks.length : 0);
-  const times = extractTimesFromText(text);
-  console.log("[Parse] Extracted times:", JSON.stringify(times));
-  let periods = [];
-
-  if (times.length >= 2) {
-    for (let i = 0; i + 1 < times.length; i += 2) {
-      periods.push({
-        period: periods.length + 1,
-        time: `${times[i]}-${times[i + 1]}`,
-        name: `Period ${periods.length + 1}`,
-      });
-    }
-  }
-
-  if (periods.length === 0) {
-    periods = DEFAULT_PERIODS.map((p) => ({ ...p }));
-  }
-
-  const timetable = {};
-  DAYS.forEach((day) => {
-    timetable[day] = periods.map((p) => ({
-      period: p.period,
-      subject: "",
-      faculty: "",
-    }));
-  });
-
-  return { periods, timetable };
-}
-
-// Preprocess image for better OCR results
-async function preprocessImage(uri) {
-  try {
-    // Get image dimensions
-    const info = await ImageManipulator.manipulateAsync(
-      uri,
-      [],
-      { format: ImageManipulator.SaveFormat.JPEG }
-    );
-
-    const width = info.width;
-    const height = info.height;
-    console.log("[Preprocess] Original image dimensions:", width, "x", height);
-
-    // Upscale aggressively - target at least 3000px on longest side for small text
-    const maxDim = Math.max(width, height);
-    const scale = maxDim < 3000 ? Math.ceil(3000 / maxDim) : 1;
-    const targetWidth = Math.round(width * scale);
-
-    console.log("[Preprocess] Scale factor:", scale, "target width:", targetWidth);
-
-    const processed = await ImageManipulator.manipulateAsync(
-      uri,
-      [
-        { resize: { width: targetWidth } },
-      ],
-      { compress: 1.0, format: ImageManipulator.SaveFormat.JPEG }
-    );
-
-    console.log("[Preprocess] Preprocessed dimensions:", processed.width, "x", processed.height);
-    return processed.uri;
-  } catch (err) {
-    console.warn("[Preprocess] Failed, using original:", err);
-    return uri;
-  }
 }
 
 const STORAGE_KEY = "@period_timer_schedule";
@@ -431,10 +258,7 @@ export default function App() {
   const [editingDay, setEditingDay] = useState("Monday");
   const [saving, setSaving] = useState(false);
   // (inline editing removed - main page cleared)
-  const [uploading, setUploading] = useState(false);
-  const [ocrText, setOcrText] = useState("");
-  const [showOCRModal, setShowOCRModal] = useState(false);
-  const [uploadedImage, setUploadedImage] = useState(null);
+  // (upload/OCR removed - only edit periods and schedule alarms remain)
   const [selectedDay, setSelectedDay] = useState("Monday");
 
   const screenData = Dimensions.get("window");
@@ -491,7 +315,7 @@ export default function App() {
         });
       }
 
-      setStatus("Ready — upload timetable (JSON or image)");
+      setStatus("Ready - edit periods and schedule alarms");
     })();
   }, []);
 
@@ -540,185 +364,6 @@ export default function App() {
     }
     setScheduled(items);
     setStatus(`Scheduled ${items.length} period alarms`);
-  }
-
-  async function handleUploadJSON() {
-    try {
-      setUploading(true);
-      const result = await DocumentPicker.getDocumentAsync({
-        type: "application/json",
-        copyToCacheDirectory: true,
-      });
-
-      if (result.canceled) {
-        setUploading(false);
-        return;
-      }
-
-      const file = result.assets ? result.assets[0] : result;
-      if (!file || !file.uri) {
-        Alert.alert("Error", "Could not read the selected file.");
-        setUploading(false);
-        return;
-      }
-
-      const response = await fetch(file.uri);
-      const text = await response.text();
-      const parsed = parseTimetableJSON(text);
-
-      updateSchedule(parsed);
-      setStatus(`Timetable uploaded! ${parsed.periods.length} periods loaded.`);
-      Alert.alert("Success", `Timetable loaded with ${parsed.periods.length} periods across ${DAYS.length} days.`);
-    } catch (_e) {
-      console.warn("Upload error:", _e);
-      Alert.alert("Upload Failed", _e.message || "Could not parse the timetable file. Please ensure it's a valid JSON timetable.");
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function handleUploadImage() {
-    try {
-      setUploading(true);
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) {
-        Alert.alert("Permission Denied", "Media library permission is required to pick images.");
-        setUploading(false);
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 1,
-      });
-
-      if (result.canceled) {
-        setUploading(false);
-        return;
-      }
-
-      const asset = result.assets ? result.assets[0] : result;
-      if (!asset || !asset.uri) {
-        Alert.alert("Error", "Could not read the selected image.");
-        setUploading(false);
-        return;
-      }
-
-      setUploadedImage(asset.uri);
-
-      try {
-        // Try OCR on multiple versions of the image
-        console.log("[OCR] Starting multi-scale OCR...");
-        let bestText = "";
-        let bestResult = null;
-
-        // Version 1: Original image
-        try {
-          console.log("[OCR] Trying original image...");
-          const origResult = await recognizeText(asset.uri);
-          const origText = origResult?.text || (Array.isArray(origResult?.blocks) ? origResult.blocks.map((b) => (typeof b.text === "string" ? b.text : "")).join("\n") : "") || "";
-          console.log("[OCR] Original text length:", origText.length, "text:", origText.substring(0, 100));
-          if (origText.length > bestText.length) {
-            bestText = origText;
-            bestResult = origResult;
-          }
-        } catch (e1) {
-          console.warn("[OCR] Original failed:", e1?.message);
-        }
-
-        // Version 2: Preprocessed (upscaled 3x)
-        console.log("[OCR] Preprocessing image...");
-        const processedUri = await preprocessImage(asset.uri);
-        try {
-          console.log("[OCR] Trying preprocessed image...");
-          const procResult = await recognizeText(processedUri);
-          const procText = procResult?.text || (Array.isArray(procResult?.blocks) ? procResult.blocks.map((b) => (typeof b.text === "string" ? b.text : "")).join("\n") : "") || "";
-          console.log("[OCR] Preprocessed text length:", procText.length, "text:", procText.substring(0, 100));
-          if (procText.length > bestText.length) {
-            bestText = procText;
-            bestResult = procResult;
-          }
-        } catch (e2) {
-          console.warn("[OCR] Preprocessed failed:", e2?.message);
-        }
-
-        // Version 3: Upscale 2x only (no crop)
-        try {
-          console.log("[OCR] Trying 2x upscale...");
-          const info = await ImageManipulator.manipulateAsync(asset.uri, [], { format: ImageManipulator.SaveFormat.JPEG });
-          const scale2 = info.width < 1500 ? 2 : 1;
-          const upscaled2 = await ImageManipulator.manipulateAsync(
-            asset.uri,
-            [{ resize: { width: Math.round(info.width * scale2) } }],
-            { compress: 1.0, format: ImageManipulator.SaveFormat.JPEG }
-          );
-          const result2 = await recognizeText(upscaled2.uri);
-          const text2 = result2?.text || (Array.isArray(result2?.blocks) ? result2.blocks.map((b) => (typeof b.text === "string" ? b.text : "")).join("\n") : "") || "";
-          console.log("[OCR] 2x upscale text length:", text2.length, "text:", text2.substring(0, 100));
-          if (text2.length > bestText.length) {
-            bestText = text2;
-            bestResult = result2;
-          }
-        } catch (e3) {
-          console.warn("[OCR] 2x upscale failed:", e3?.message);
-        }
-
-        const ocrResult = bestResult || {};
-        const text = bestText;
-        console.log("[OCR] Best text length:", text.length);
-        console.log("[OCR] Full result:", JSON.stringify(ocrResult).substring(0, 500));
-
-        setOcrText(text || "No text detected by OCR.");
-
-        if (!text || text.trim().length === 0) {
-          updateSchedule(createBlankSchedule());
-          setStatus("Image loaded. No text detected - please enter data manually.");
-          Alert.alert(
-            "No Text Detected",
-            "OCR could not detect any text in the image. The image is shown as reference. Please enter the schedule manually using 'Edit Periods'."
-          );
-          setShowOCRModal(true);
-          return;
-        }
-
-        // Parse OCR text into schedule
-        const parsed = parseOCRText(text, ocrResult?.blocks);
-        updateSchedule(parsed);
-        const timesFound = extractTimesFromText(text);
-        setStatus(`Image processed! ${parsed.periods.length} periods, ${timesFound.length} times found. Edit as needed.`);
-        Alert.alert(
-          "Image Processed",
-          `Extracted ${timesFound.length} time values and ${parsed.periods.length} periods from the image. Please review and edit the schedule. The OCR text is shown for reference.`
-        );
-        setShowOCRModal(true);
-      } catch (ocrErr) {
-        console.warn("OCR error:", ocrErr);
-        updateSchedule(createBlankSchedule());
-        setStatus("Image loaded. OCR failed - please enter data manually.");
-        Alert.alert(
-          "OCR Failed",
-          `OCR error: ${ocrErr?.message || "Unknown error"}. The image is shown as reference. Please enter the schedule manually using 'Edit Periods'.`
-        );
-        setShowOCRModal(true);
-      }
-    } catch (_e) {
-      console.warn("Image upload error:", _e);
-      Alert.alert("Upload Failed", _e.message || "Could not process the image.");
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  function handleUpload() {
-    Alert.alert(
-      "Upload Timetable",
-      "Choose the type of file to upload:",
-      [
-        { text: "JSON File", onPress: handleUploadJSON },
-        { text: "Image (Photo)", onPress: handleUploadImage },
-        { text: "Cancel", style: "cancel" },
-      ]
-    );
   }
 
   function openEditor() {
@@ -818,14 +463,6 @@ export default function App() {
         <Text style={[styles.title, { fontSize: titleSize }]}>Period Timer — Timetable</Text>
         <Text style={styles.status}>{status}</Text>
 
-        {/* Uploaded Image Reference */}
-        {uploadedImage && (
-          <View style={styles.imageContainer}>
-            <Text style={styles.imageLabel}>Uploaded Timetable Image:</Text>
-            <Image source={{ uri: uploadedImage }} style={styles.uploadedImage} resizeMode="contain" />
-          </View>
-        )}
-
         {/* Day Selector */}
         <View style={styles.daySelectorRow}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.daySelectorScroll}>
@@ -871,30 +508,6 @@ export default function App() {
 
         <Text style={styles.footer}>Scheduled: {scheduled.length} alarms</Text>
       </ScrollView>
-
-      {/* OCR Text Reference Modal */}
-      <Modal visible={showOCRModal} animationType="slide" transparent={false} onRequestClose={() => setShowOCRModal(false)}>
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>OCR Extracted Text</Text>
-            <TouchableOpacity onPress={() => setShowOCRModal(false)} style={styles.closeBtn} activeOpacity={0.7}>
-              <Text style={styles.closeBtnText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent}>
-            <Text style={styles.ocrLabel}>Raw OCR Text:</Text>
-            <Text style={styles.ocrText}>{ocrText || "No text extracted."}</Text>
-            <Text style={styles.ocrHint}>
-              Review the extracted text above. Times found: {extractTimesFromText(ocrText).length}. Edit the schedule using {'"'}Edit Periods{'"'} or by tapping subject/faculty fields on the main page.
-            </Text>
-          </ScrollView>
-          <View style={styles.modalFooter}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowOCRModal(false)} activeOpacity={0.7}>
-              <Text style={styles.cancelBtnText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </Modal>
 
       {/* Period Editor Modal */}
       <Modal visible={showEditor} animationType="slide" transparent={false} onRequestClose={closeEditor}>
@@ -1028,15 +641,6 @@ export default function App() {
       {/* Bottom Action Bar */}
       <View style={styles.bottomBar}>
         <TouchableOpacity
-          style={[styles.bottomBtn, uploading && styles.saveBtnDisabled]}
-          onPress={handleUpload}
-          activeOpacity={0.7}
-          disabled={uploading}
-        >
-          <Text style={styles.bottomBtnText}>{uploading ? "Uploading..." : "Upload Timetable"}</Text>
-          <Text style={styles.btnHint}>Load JSON or photo</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
           style={styles.bottomBtn}
           onPress={openEditor}
           activeOpacity={0.7}
@@ -1065,18 +669,7 @@ const styles = StyleSheet.create({
   scrollContent: { padding: 12, paddingBottom: 20 },
   title: { fontSize: 22, fontWeight: "bold", marginBottom: 4 },
   status: { fontSize: 13, color: "#555", marginBottom: 10 },
-  imageContainer: {
-    marginBottom: 12,
-    padding: 8,
-    backgroundColor: "#f0f0f0",
-    borderRadius: 8,
-  },
-  imageLabel: { fontSize: 12, color: "#666", marginBottom: 4, fontWeight: "600" },
-  uploadedImage: {
-    width: "100%",
-    height: 200,
-    borderRadius: 8,
-  },
+
   day: { marginBottom: 10, padding: 8, backgroundColor: "#f2f2f2", borderRadius: 8 },
   dayCard: { marginBottom: 10, padding: 8, backgroundColor: "#f2f2f2", borderRadius: 8 },
   daySelectorRow: { marginBottom: 10 },
@@ -1137,9 +730,7 @@ const styles = StyleSheet.create({
     minHeight: 36,
   },
   footer: { marginTop: 12, fontSize: 12, color: "#888", textAlign: "center" },
-  ocrText: { fontSize: 12, color: "#333", lineHeight: 18 },
-  ocrLabel: { fontSize: 13, fontWeight: "bold", color: "#2196F3", marginBottom: 4 },
-  ocrHint: { fontSize: 12, color: "#888", marginTop: 12, fontStyle: "italic" },
+
 
   // Bottom bar
   bottomBar: {
