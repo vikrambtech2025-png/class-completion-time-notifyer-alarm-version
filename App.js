@@ -16,6 +16,8 @@ import {
 import * as Notifications from "expo-notifications";
 import * as Device from "expo-device";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import AuthScreen from "./src/AuthScreen";
+import { getSession, signOut } from "./src/auth";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -260,9 +262,29 @@ export default function App() {
   // (inline editing removed - main page cleared)
   // (upload/OCR removed - only edit periods and schedule alarms remain)
   const [selectedDay, setSelectedDay] = useState("Monday");
+  const [authReady, setAuthReady] = useState(false);
+  const [sessionEmail, setSessionEmail] = useState(null);
 
   const screenData = Dimensions.get("window");
   const isSmallScreen = screenData.width < 360;
+
+  async function handleSignedIn(acc) {
+    if (acc && acc.email) setSessionEmail(acc.email);
+  }
+  async function handleSignOut() {
+    await signOut();
+    setSessionEmail(null);
+  }
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const sess = await getSession();
+        if (sess && sess.email) setSessionEmail(sess.email);
+      } catch (_e) {}
+      setAuthReady(true);
+    })();
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -457,11 +479,32 @@ export default function App() {
 
   const titleSize = isSmallScreen ? 18 : 22;
 
+  if (!authReady) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <Text style={styles.status}>Loading...</Text>
+      </SafeAreaView>
+    );
+  }
+  if (!sessionEmail) {
+    return <AuthScreen onSignedIn={handleSignedIn} />;
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <Text style={[styles.title, { fontSize: titleSize }]}>Period Timer — Timetable</Text>
         <Text style={styles.status}>{status}</Text>
+
+        {/* Staff session header */}
+        <View style={styles.sessionHeader}>
+          <Text style={styles.sessionEmail} numberOfLines={1}>
+            Signed in: {sessionEmail}
+          </Text>
+          <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut} activeOpacity={0.7}>
+            <Text style={styles.signOutText}>Sign out</Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Day Selector */}
         <View style={styles.daySelectorRow}>
@@ -673,6 +716,24 @@ const styles = StyleSheet.create({
   day: { marginBottom: 10, padding: 8, backgroundColor: "#f2f2f2", borderRadius: 8 },
   dayCard: { marginBottom: 10, padding: 8, backgroundColor: "#f2f2f2", borderRadius: 8 },
   daySelectorRow: { marginBottom: 10 },
+  sessionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    backgroundColor: "#f0f0f0",
+    borderRadius: 8,
+  },
+  sessionEmail: { fontSize: 13, color: "#333", fontWeight: "600", flex: 1, marginRight: 8 },
+  signOutBtn: {
+    backgroundColor: "#000",
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  signOutText: { color: "#fff", fontSize: 12, fontWeight: "bold" },
   daySelectorScroll: { flexGrow: 0 },
   daySelectorBtn: {
     paddingHorizontal: 14,
