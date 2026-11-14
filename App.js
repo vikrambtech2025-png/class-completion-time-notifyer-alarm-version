@@ -290,15 +290,21 @@ export default function App() {
     (async () => {
       try {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        let loaded = null;
         if (raw) {
-          const parsed = JSON.parse(raw);
-          setSchedule(parsed);
+          loaded = JSON.parse(raw);
+          setSchedule(loaded);
         } else {
-          setSchedule(createBlankSchedule());
+          loaded = createBlankSchedule();
+          setSchedule(loaded);
         }
+        // Auto-schedule alarms on launch so they are always present
+        try { await scheduleAll(loaded); } catch (e) { console.warn("Auto-schedule failed", e); }
       } catch (_e) {
         console.warn("Failed to load saved data", _e);
-        setSchedule(createBlankSchedule());
+        const blank = createBlankSchedule();
+        setSchedule(blank);
+        try { await scheduleAll(blank); } catch (e) { console.warn("Auto-schedule failed", e); }
       }
 
       if (!Device.isDevice) {
@@ -359,34 +365,54 @@ export default function App() {
     [persistSchedule]
   );
 
-  async function scheduleAll(periodList) {
+  const DAY_TO_WEEKDAY = {
+    Monday: 2,
+    Tuesday: 3,
+    Wednesday: 4,
+    Thursday: 5,
+    Friday: 6,
+    Saturday: 7,
+  };
+
+  async function scheduleAll(scheduleObj) {
+    const sched = scheduleObj && scheduleObj.periods ? scheduleObj : { periods: scheduleObj || [], timetable: {} };
     await Notifications.cancelAllScheduledNotificationsAsync();
     const items = [];
-    for (const pt of periodList) {
-      const [start] = (pt.time || "").split("-");
-      if (!validateTime(start)) continue;
-      const s = parseTime(start);
-      const when = nextOccurrence(s.h, s.m);
-      const name = pt.name || `Period ${pt.period}`;
-      const id = await Notifications.scheduleNotificationAsync({
-        content: {
-          title: `Period ${pt.period}: ${name}`,
-          body: `${name} — ${formatTimeRange(pt.time)}`,
-          priority: 2,
-          sticky: true,
-          autoDismiss: false,
-        },
-        trigger: {
-          type: Notifications.SchedulableTriggerInputTypes.DATE,
-          date: when,
-          channelId: "period-alarms-v3",
-        },
-      });
-      items.push({ period: pt.period, time: pt.time, name, id });
+    for (const day of DAYS) {
+      const weekday = DAY_TO_WEEKDAY[day];
+      if (!weekday) continue;
+      const dayEntries = (sched.timetable && sched.timetable[day]) || [];
+      for (let i = 0; i < sched.periods.length; i++) {
+        const pt = sched.periods[i];
+        const [start] = (pt.time || "").split("-");
+        if (!validateTime(start)) continue;
+        const s = parseTime(start);
+        const entry = dayEntries[i] || { subject: "", faculty: "" };
+        const name = pt.name || `Period ${pt.period}`;
+        const subject = (entry.subject || "").trim();
+        const id = await Notifications.scheduleNotificationAsync({
+          content: {
+            title: `Period ${pt.period}: ${name}`,
+            body: `${day} - ${subject || "No subject"} - ${formatTimeRange(pt.time)}`,
+            priority: 2,
+            sticky: true,
+            autoDismiss: false,
+          },
+          trigger: {
+            type: Notifications.SchedulableTriggerInputTypes.WEEKLY,
+            weekday,
+            hour: s.h,
+            minute: s.m,
+            channelId: "period-alarms-v3",
+          },
+        });
+        items.push({ day, period: pt.period, time: pt.time, name, subject, id });
+      }
     }
     setScheduled(items);
-    setStatus(`Scheduled ${items.length} period alarms`);
+    setStatus(`Scheduled ${items.length} period alarms (${DAYS.length} days)`);
   }
+
 
   function openEditor() {
     setEditPeriods(currentSchedule.periods.map((p) => ({ ...p })));
@@ -470,7 +496,7 @@ export default function App() {
       }));
     });
     updateSchedule(updated);
-    await scheduleAll(updated.periods);
+    await scheduleAll(updated);
     setSaving(false);
     setShowEditor(false);
   }
@@ -694,7 +720,7 @@ export default function App() {
         <TouchableOpacity
           style={[styles.bottomBtn, saving && styles.saveBtnDisabled]}
           onPress={() => {
-            scheduleAll(currentSchedule.periods);
+            scheduleAll(currentSchedule);
           }}
           disabled={saving}
           activeOpacity={0.7}
