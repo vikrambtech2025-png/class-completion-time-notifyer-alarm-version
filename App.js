@@ -290,21 +290,14 @@ export default function App() {
     (async () => {
       try {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        let loaded = null;
         if (raw) {
-          loaded = JSON.parse(raw);
-          setSchedule(loaded);
+          setSchedule(JSON.parse(raw));
         } else {
-          loaded = createBlankSchedule();
-          setSchedule(loaded);
+          setSchedule(createBlankSchedule());
         }
-        // Auto-schedule alarms on launch so they are always present
-        try { await scheduleAll(loaded); } catch (e) { console.warn("Auto-schedule failed", e); }
       } catch (_e) {
         console.warn("Failed to load saved data", _e);
-        const blank = createBlankSchedule();
-        setSchedule(blank);
-        try { await scheduleAll(blank); } catch (e) { console.warn("Auto-schedule failed", e); }
+        setSchedule(createBlankSchedule());
       }
 
       if (!Device.isDevice) {
