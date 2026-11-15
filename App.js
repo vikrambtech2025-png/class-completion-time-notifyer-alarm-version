@@ -386,7 +386,7 @@ export default function App() {
         const id = await Notifications.scheduleNotificationAsync({
           content: {
             title: `Period ${pt.period}: ${name}`,
-            body: `${day} - ${subject || "No subject"} - ${formatTimeRange(pt.time)}`,
+            body: `${day} - ${subject || ""} - ${formatTimeRange(pt.time)}`,
             priority: 2,
             sticky: true,
             autoDismiss: false,
@@ -556,11 +556,11 @@ export default function App() {
                   <Text style={styles.periodTime}>{formatTimeRange(p.time)}</Text>
                 </View>
                 <View style={styles.periodDetails}>
-                  <Text style={[styles.detailText, !entry.subject && styles.placeholderText]}>
-                    {entry.subject || "No subject"}
+                  <Text style={styles.detailText}>
+                    {entry.subject || ""}
                   </Text>
-                  <Text style={[styles.detailText, !entry.faculty && styles.placeholderText, styles.facultyText]}>
-                    {entry.faculty || "No faculty"}
+                  <Text style={[styles.detailText, styles.facultyText]}>
+                    {entry.faculty || ""}
                   </Text>
                 </View>
               </View>
