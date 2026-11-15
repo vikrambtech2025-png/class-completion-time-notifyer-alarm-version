@@ -326,7 +326,7 @@ export default function App() {
       }
 
       if (Platform.OS === "android") {
-        await Notifications.setNotificationChannelAsync("period-alarms-v3", {
+        await Notifications.setNotificationChannelAsync("period-alarms-v4", {
           name: "Period Alarms",
           importance: 5,
           sound: "buzzer",
@@ -396,7 +396,7 @@ export default function App() {
             weekday,
             hour: s.h,
             minute: s.m,
-            channelId: "period-alarms-v3",
+            channelId: "period-alarms-v4",
           },
         });
         items.push({ day, period: pt.period, time: pt.time, name, subject, id });
